@@ -373,3 +373,97 @@ class TestSaveStatusAtomicity:
                 report_status.load_status()
 
         assert entered["value"] is True
+
+
+def _status_record(slug: str, status: str = "processing", tenant: str | None = None) -> dict:
+    record = {
+        "slug": slug,
+        "status": status,
+        "title": "t",
+        "description": "d",
+        "visibility": "unlisted",
+    }
+    if tenant:
+        record["tenant_id"] = tenant
+    return record
+
+
+class TestTenantScopedStatus:
+    """テナント付きキーは、そのテナントのコンテキストからだけ更新する。"""
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, tmp_path):
+        from src.tenant import current_tenant, reset_tenant, set_tenant
+
+        original = deepcopy(report_status._report_status)
+        report_status._report_status.clear()
+        state_file = tmp_path / "report_status.json"
+        token = set_tenant(None)
+        self._state_file = state_file
+        try:
+            with patch("src.services.report_status.STATE_FILE", state_file):
+                yield
+        finally:
+            reset_tenant(token)
+            if current_tenant() is not None:
+                set_tenant(None)
+            report_status._report_status.clear()
+            report_status._report_status.update(original)
+
+    def test_set_status_updates_only_the_current_tenant(self):
+        from src.tenant import reset_tenant, set_tenant
+
+        slug = "same-slug"
+        report_status._report_status[f"ashisuto:{slug}"] = _status_record(slug, tenant="ashisuto")
+        report_status._report_status[f"demo1:{slug}"] = _status_record(slug, tenant="demo1")
+
+        token = set_tenant("ashisuto")
+        try:
+            report_status.set_status(slug, "ready")
+        finally:
+            reset_tenant(token)
+
+        with pytest.raises(ValueError, match="not found in report status"):
+            report_status.set_status(slug, "error")
+
+        assert report_status._report_status[f"ashisuto:{slug}"]["status"] == "ready"
+        assert report_status._report_status[f"demo1:{slug}"]["status"] == "processing"
+        assert slug not in report_status._report_status
+
+    def test_token_usage_does_not_write_another_tenant(self):
+        from src.tenant import reset_tenant, set_tenant
+
+        slug = "same-slug"
+        report_status._report_status[f"ashisuto:{slug}"] = _status_record(slug, tenant="ashisuto")
+        report_status._report_status[f"demo1:{slug}"] = _status_record(slug, tenant="demo1")
+
+        report_status.update_token_usage(slug, 10)
+        assert "token_usage" not in report_status._report_status[f"ashisuto:{slug}"]
+        assert "token_usage" not in report_status._report_status[f"demo1:{slug}"]
+
+        token = set_tenant("demo1")
+        try:
+            report_status.update_token_usage(slug, 4, token_usage_input=1, token_usage_output=3)
+        finally:
+            reset_tenant(token)
+
+        assert "token_usage" not in report_status._report_status[f"ashisuto:{slug}"]
+        assert report_status._report_status[f"demo1:{slug}"]["token_usage"] == 4
+        assert report_status._report_status[f"demo1:{slug}"]["token_usage_input"] == 1
+
+    def test_processing_scopes_skip_mismatched_keys(self):
+        slug = "kept"
+        data = {
+            f"ashisuto:{slug}": _status_record(slug, tenant="ashisuto"),
+            "bare": _status_record("bare"),
+            "mismatch": _status_record("mismatch", tenant="ashisuto"),
+            "ready-one": _status_record("ready-one", status="ready", tenant="demo1"),
+        }
+        self._state_file.write_text(json.dumps(data), encoding="utf-8")
+
+        scopes = report_status.processing_report_scopes()
+
+        assert (slug, "ashisuto") in scopes
+        assert ("bare", None) in scopes
+        assert all(item[0] != "mismatch" for item in scopes)
+        assert all(item[0] != "ready-one" for item in scopes)

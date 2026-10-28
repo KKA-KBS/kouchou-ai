@@ -22,6 +22,10 @@ _report_status = {}
 
 
 def _status_key(slug: str) -> str:
+    """今のテナントに属するキーだけを返す。
+
+    テナントが空のときはスラッグそのもの。記録を走査して他テナントのキーは作らない。
+    """
     tenant = current_tenant()
     return f"{tenant}:{slug}" if tenant else slug
 
@@ -33,15 +37,39 @@ def _stamp_tenant(record: dict) -> dict:
     return record
 
 
-def tenant_of(slug: str) -> str | None:
-    """S3 プレフィックス用。リクエスト中のテナントを優先し、なければステータス記録を見る。"""
-    tenant = current_tenant()
-    if tenant:
-        return tenant
-    for report in _report_status.values():
-        if report.get("slug") == slug and report.get("tenant_id"):
-            return report["tenant_id"]
-    return None
+def _stored_key(slug: str) -> str | None:
+    """今のテナントのキーが辞書にあればそれを返す。無ければ None。"""
+    key = _status_key(slug)
+    if key not in _report_status:
+        return None
+    return key
+
+
+def processing_report_scopes() -> list[tuple[str, str | None]]:
+    """起動時復旧の対象。(slug, tenant_id)。tenant_id が無いレコードは None。
+
+    キーが「そのレコード自身のテナント + slug」と一致するものだけ返す。
+    一致しない記録は、別テナントのエントリを更新しないよう除外する。
+    """
+    load_status()
+    scopes: list[tuple[str, str | None]] = []
+    with _lock:
+        items = list(_report_status.items())
+    for key, report in items:
+        if report.get("status") != ReportStatus.PROCESSING.value:
+            continue
+        slug = report.get("slug")
+        if not isinstance(slug, str) or not slug:
+            continue
+        tenant_id = report.get("tenant_id")
+        if not isinstance(tenant_id, str) or not tenant_id:
+            tenant_id = None
+        expected = f"{tenant_id}:{slug}" if tenant_id else slug
+        if key != expected:
+            logger.error(f"Skip recovery for {slug}: status key {key!r} does not match tenant {tenant_id!r}")
+            continue
+        scopes.append((slug, tenant_id))
+    return scopes
 
 
 def _visible(report: dict) -> bool:
@@ -184,8 +212,8 @@ def delete_report_from_status(slug: str) -> None:
 
 def set_status(slug: str, status: str) -> None:
     with _lock:
-        key = _status_key(slug)
-        if key not in _report_status:
+        key = _stored_key(slug)
+        if key is None:
             raise ValueError(f"slug {slug} not found in report status")
         _report_status[key]["status"] = status
         save_status()
@@ -224,14 +252,16 @@ def invalidate_report_cache(slug: str) -> None:
 
 def update_report_visibility_state(slug: str, new_visibility: ReportVisibility) -> str:
     with _lock:
-        if slug not in _report_status:
+        key = _stored_key(slug)
+        if key is None:
             raise ValueError(f"slug {slug} not found in report status")
         # enumの値を文字列に変換して保存
-        _report_status[_status_key(slug)]["visibility"] = new_visibility.value
+        _report_status[key]["visibility"] = new_visibility.value
 
         save_status()
+        visibility = _report_status[key]["visibility"]
     invalidate_report_cache(slug)
-    return _report_status[_status_key(slug)]["visibility"]
+    return visibility
 
 
 def update_token_usage(
@@ -256,24 +286,25 @@ def update_token_usage(
         ValueError: 指定されたスラッグのレポートが存在しない場合
     """
     with _lock:
-        if slug not in _report_status:
+        key = _stored_key(slug)
+        if key is None:
             logger.warning(f"slug {slug} not found in report status when updating token usage")
             return
 
-        _report_status[_status_key(slug)]["token_usage"] = token_usage
+        _report_status[key]["token_usage"] = token_usage
 
         if token_usage_input is not None:
-            _report_status[_status_key(slug)]["token_usage_input"] = token_usage_input
+            _report_status[key]["token_usage_input"] = token_usage_input
 
         if token_usage_output is not None:
-            _report_status[_status_key(slug)]["token_usage_output"] = token_usage_output
+            _report_status[key]["token_usage_output"] = token_usage_output
 
         if provider is not None:
-            _report_status[_status_key(slug)]["provider"] = provider
+            _report_status[key]["provider"] = provider
             logger.info(f"Updated provider for {slug}: {provider}")
 
         if model is not None:
-            _report_status[_status_key(slug)]["model"] = model
+            _report_status[key]["model"] = model
             logger.info(f"Updated model for {slug}: {model}")
 
         if (
@@ -283,7 +314,7 @@ def update_token_usage(
             and model is not None
         ):
             estimated_cost = LLMPricing.calculate_cost(provider, model, token_usage_input, token_usage_output)
-            _report_status[_status_key(slug)]["estimated_cost"] = estimated_cost
+            _report_status[key]["estimated_cost"] = estimated_cost
             logger.info(f"Updated estimated cost for {slug}: {LLMPricing.format_cost(estimated_cost)}")
 
         logger.info(
@@ -307,21 +338,23 @@ def update_report_config(slug: str, updated_config: ReportConfigUpdate) -> dict:
         ValueError: 指定されたスラッグのレポートが存在しない場合
     """
     with _lock:
-        if slug not in _report_status:
+        key = _stored_key(slug)
+        if key is None:
             raise ValueError(f"slug {slug} not found in report status")
 
         # タイトルの更新（指定された場合のみ）
         if updated_config.question is not None:
-            _report_status[_status_key(slug)]["title"] = updated_config.question
+            _report_status[key]["title"] = updated_config.question
 
         # 説明の更新（指定された場合のみ）
         if updated_config.intro is not None:
-            _report_status[_status_key(slug)]["description"] = updated_config.intro
+            _report_status[key]["description"] = updated_config.intro
 
         save_status()
+        updated = dict(_report_status[key])
 
     invalidate_report_cache(slug)
-    return _report_status[_status_key(slug)]
+    return updated
 
 
 def add_analysis_data(report: Report) -> Report:

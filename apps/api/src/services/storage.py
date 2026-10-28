@@ -375,27 +375,12 @@ class S3StorageService(StorageService):
         self.bucket = bucket
         self.client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "ap-northeast-1"))
 
-    def _slug_from_path(self, remote_path: str) -> str | None:
-        parts = remote_path.split("/")
-        if len(parts) < 2 or parts[0] not in {"outputs", "inputs", "configs"}:
-            return None
-        name = parts[1]
-        for suffix in (".csv", ".json"):
-            if name.endswith(suffix):
-                name = name[: -len(suffix)]
-        return name or None
-
     def _key(self, remote_path: str) -> str:
         normalized = remote_path.lstrip("/")
         if normalized.startswith("status"):
             return normalized
+        # テナントが空のときは記録を探して他テナントのプレフィックスを付けない。
         tenant = current_tenant()
-        if not tenant:
-            slug = self._slug_from_path(normalized)
-            if slug:
-                from src.services.report_status import tenant_of
-
-                tenant = tenant_of(slug)
         if not tenant:
             return normalized
         return f"kouchou/{tenant}/{normalized}"

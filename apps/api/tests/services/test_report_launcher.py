@@ -1041,3 +1041,164 @@ def test_recover_interrupted_reports_does_nothing_without_processing_entries(mon
     report_launcher.recover_interrupted_reports()
 
     assert json.loads(status_file.read_text(encoding="utf-8"))["old"]["status"] == "ready"
+
+
+class _FinishedProcess:
+    def wait(self):
+        return 0
+
+
+class _SyncOk:
+    def __init__(self, calls):
+        self._calls = calls
+
+    def sync_report_files_to_storage(self, value):
+        from src.tenant import current_tenant
+
+        self._calls.append(("report", value, current_tenant()))
+        return True
+
+    def sync_input_file_to_storage(self, value):
+        from src.tenant import current_tenant
+
+        self._calls.append(("input", value, current_tenant()))
+        return True
+
+    def sync_config_file_to_storage(self, value):
+        from src.tenant import current_tenant
+
+        self._calls.append(("config", value, current_tenant()))
+        return True
+
+    def sync_status_file_to_storage(self):
+        from src.tenant import current_tenant
+
+        self._calls.append(("status", None, current_tenant()))
+
+
+def _seed_tenant_reports(slug: str) -> None:
+    from src.services import report_status
+
+    report_status._report_status.clear()
+    for tenant in ("ashisuto", "demo1"):
+        report_status._report_status[f"{tenant}:{slug}"] = {
+            "slug": slug,
+            "tenant_id": tenant,
+            "status": "processing",
+            "title": "t",
+            "description": "d",
+            "visibility": "unlisted",
+        }
+
+
+def test_monitor_thread_sets_ready_only_for_the_request_tenant(monkeypatch, tmp_path):
+    from src.services import report_launcher, report_status
+    from src.tenant import current_tenant, reset_tenant, set_tenant
+
+    slug = "same-slug"
+    status_file = tmp_path / "report_status.json"
+    monkeypatch.setattr(report_status, "STATE_FILE", status_file)
+    monkeypatch.setattr(report_launcher.settings, "REPORT_DIR", tmp_path / "reports")
+    calls = []
+    monkeypatch.setattr(report_launcher, "ReportSyncService", lambda: _SyncOk(calls))
+    _seed_tenant_reports(slug)
+
+    assert current_tenant() is None
+    token = set_tenant("ashisuto")
+    try:
+        thread = report_launcher._start_monitor_thread(_FinishedProcess(), slug, None)
+    finally:
+        reset_tenant(token)
+    thread.join(5)
+
+    assert thread.is_alive() is False
+    assert current_tenant() is None
+    assert report_status._report_status[f"ashisuto:{slug}"]["status"] == "ready"
+    assert report_status._report_status[f"demo1:{slug}"]["status"] == "processing"
+    assert ("report", slug, "ashisuto") in calls
+    assert all(tenant != "demo1" for _, _, tenant in calls)
+
+
+def test_monitor_thread_without_tenant_does_not_adopt_another_tenant(monkeypatch, tmp_path):
+    from src.services import report_launcher, report_status
+    from src.tenant import current_tenant, reset_tenant, set_tenant
+
+    slug = "same-slug"
+    status_file = tmp_path / "report_status.json"
+    monkeypatch.setattr(report_status, "STATE_FILE", status_file)
+    monkeypatch.setattr(report_launcher.settings, "REPORT_DIR", tmp_path / "reports")
+    monkeypatch.setattr(report_launcher, "ReportSyncService", lambda: _SyncOk([]))
+    _seed_tenant_reports(slug)
+
+    token = set_tenant(None)
+    try:
+        thread = report_launcher._start_monitor_thread(_FinishedProcess(), slug, None)
+    finally:
+        reset_tenant(token)
+    thread.join(5)
+
+    assert current_tenant() is None
+    assert report_status._report_status[f"ashisuto:{slug}"]["status"] == "processing"
+    assert report_status._report_status[f"demo1:{slug}"]["status"] == "processing"
+
+
+def test_recover_interrupted_reports_keeps_tenants_apart(monkeypatch, tmp_path):
+    import json
+
+    from src.services import report_launcher, report_status
+    from src.tenant import current_tenant
+
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    status_file = tmp_path / "report_status.json"
+    done = "done-a"
+    other = "other-b"
+    status_file.write_text(
+        json.dumps(
+            {
+                f"ashisuto:{done}": {
+                    "slug": done,
+                    "tenant_id": "ashisuto",
+                    "status": "processing",
+                    "title": "t",
+                    "description": "d",
+                    "visibility": "unlisted",
+                },
+                f"demo1:{other}": {
+                    "slug": other,
+                    "tenant_id": "demo1",
+                    "status": "processing",
+                    "title": "t",
+                    "description": "d",
+                    "visibility": "unlisted",
+                },
+                "mismatch": {
+                    "slug": "mismatch",
+                    "tenant_id": "ashisuto",
+                    "status": "processing",
+                    "title": "t",
+                    "description": "d",
+                    "visibility": "unlisted",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (report_dir / done).mkdir()
+    (report_dir / done / "hierarchical_status.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    (report_dir / done / "hierarchical_result.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(report_launcher.settings, "REPORT_DIR", report_dir)
+    monkeypatch.setattr(report_status, "STATE_FILE", status_file)
+    calls = []
+    monkeypatch.setattr(report_launcher, "ReportSyncService", lambda: _SyncOk(calls))
+
+    assert current_tenant() is None
+    report_launcher.recover_interrupted_reports()
+
+    saved = json.loads(status_file.read_text(encoding="utf-8"))
+    assert saved[f"ashisuto:{done}"]["status"] == "ready"
+    assert saved[f"demo1:{other}"]["status"] == "error"
+    assert saved["mismatch"]["status"] == "processing"
+    assert ("report", done, "ashisuto") in calls
+    assert current_tenant() is None

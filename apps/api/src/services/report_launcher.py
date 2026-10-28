@@ -1,3 +1,4 @@
+import contextvars
 import json
 import os
 import subprocess
@@ -10,14 +11,14 @@ import polars as pl
 
 from src.config import settings
 from src.schemas.admin_report import ReportInput
-from src.schemas.report import ReportStatus
 from src.services.analysis_config import prune_config_for_mode
 from src.services.report_status import (
     add_new_report_to_status,
-    load_status_as_reports,
+    processing_report_scopes,
     set_status,
     update_token_usage,
 )
+from src.tenant import reset_tenant, set_tenant
 from src.services.report_sync import ReportSyncService
 from src.utils.logger import setup_logger
 
@@ -294,14 +295,16 @@ def recover_interrupted_reports() -> None:
     レポートは error になる。その後ジョブが完了しても監視するものがないため error のまま残る。
     """
     try:
-        interrupted = [r.slug for r in load_status_as_reports() if r.status == ReportStatus.PROCESSING]
+        # 各レコード自身の tenant_id だけを使う。空のコンテキストから slug で他テナントを探さない。
+        interrupted = processing_report_scopes()
     except Exception as e:
         logger.error(f"Failed to load report status for recovery: {e}")
         return
     if not interrupted:
         return
 
-    for slug in interrupted:
+    for slug, tenant_id in interrupted:
+        token = set_tenant(tenant_id) if tenant_id else None
         try:
             if _is_workflow_completed(slug):
                 logger.info(f"Recovering interrupted report {slug}: workflow already completed")
@@ -312,6 +315,9 @@ def recover_interrupted_reports() -> None:
                 set_status(slug, "error")
         except Exception as e:
             logger.error(f"Failed to recover interrupted report {slug}: {e}")
+        finally:
+            if token is not None:
+                reset_tenant(token)
 
     ReportSyncService().sync_status_file_to_storage()
 
@@ -380,8 +386,20 @@ def _launch_analysis_process(cmd: list[str], slug: str, env: dict[str, str]) -> 
     except Exception:
         log_file.close()
         raise
-    threading.Thread(target=_monitor_process, args=(process, slug, log_file), daemon=True).start()
+    _start_monitor_thread(process, slug, log_file)
     return process
+
+
+def _start_monitor_thread(process: subprocess.Popen, slug: str, log_file: Any | None) -> threading.Thread:
+    """分析完了の監視を、起動時点のテナントコンテキストのまま始める。
+
+    標準の Thread は contextvars を引き継がない。コピー元が空なら空のまま始まり、
+    他テナントの記録は参照しない。
+    """
+    ctx = contextvars.copy_context()
+    thread = threading.Thread(target=ctx.run, args=(_monitor_process, process, slug, log_file), daemon=True)
+    thread.start()
+    return thread
 
 
 def _set_report_status_if_present(slug: str, status: str) -> None:
