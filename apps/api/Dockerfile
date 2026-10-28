@@ -37,7 +37,7 @@ RUN set -- "/packages/analysis-core[full]" && \
                --index-strategy unsafe-first-match "$@"; \
     fi && \
     echo "Installing dependencies (GPU=$WITH_GPU, ENV=$ENVIRONMENT)" && \
-    uv pip install --no-cache --system "$@"
+    uv pip install --no-cache --system "$@" "boto3>=1.35.0"
 
 # Copy application source
 COPY apps/api/ .
