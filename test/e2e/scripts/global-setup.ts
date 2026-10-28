@@ -62,7 +62,7 @@ export default async function globalSetup() {
         ...process.env,
         NEXT_PUBLIC_API_BASEPATH: dummyServerUrl,
         API_BASEPATH: dummyServerUrl,
-        NEXT_PUBLIC_PUBLIC_API_KEY: "public",
+        PUBLIC_API_KEY: "public",
       },
     });
 
@@ -74,7 +74,7 @@ export default async function globalSetup() {
         ...process.env,
         NEXT_PUBLIC_API_BASEPATH: dummyServerUrl,
         API_BASEPATH: dummyServerUrl,
-        NEXT_PUBLIC_PUBLIC_API_KEY: "public",
+        PUBLIC_API_KEY: "public",
       },
     });
 

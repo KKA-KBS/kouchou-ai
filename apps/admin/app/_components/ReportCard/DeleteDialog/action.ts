@@ -1,5 +1,6 @@
 "use server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
 import { getApiBaseUrl } from "../../../utils/api";
 
 type DeleteResult = { success: true } | { success: false; error: string };
@@ -10,7 +11,7 @@ export async function reportDelete(slug: string): Promise<DeleteResult> {
     const response = await fetch(`${getApiBaseUrl()}/admin/reports/${encodedSlug}`, {
       method: "DELETE",
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+        ...(await adminApiHeaders()),
         "Content-Type": "application/json",
       },
     });

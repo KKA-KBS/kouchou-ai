@@ -11,7 +11,7 @@ describe("jsonDownload", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
     mockGetApiBaseUrl.mockReturnValue("http://localhost:8000");
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = "test-api-key";
+    process.env.ADMIN_API_KEY = "test-api-key";
   });
 
   afterEach(() => {

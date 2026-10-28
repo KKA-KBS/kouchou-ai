@@ -6,6 +6,7 @@ to the new workflow-based format while maintaining backwards compatibility.
 """
 
 import inspect
+import os
 from typing import Any
 
 from analysis_core.prompts import get_default_prompt
@@ -107,7 +108,7 @@ def normalize_config(config: dict[str, Any], include_source_code: bool = True) -
 
     # Embedding defaults
     embedding = result.setdefault("embedding", {})
-    embedding.setdefault("model", "text-embedding-3-small")
+    embedding.setdefault("model", os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"))
     if "embedding" in source_codes:
         embedding.setdefault("source_code", source_codes["embedding"])
 

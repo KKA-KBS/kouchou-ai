@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from "@/app/utils/api";
+import { publicApiHeaders } from "../apiHeaders";
 import { getClusterNum } from "@/app/utils/cluster-num";
 import type { Result } from "@/type";
 import { ImageResponse } from "next/og";
@@ -83,14 +84,12 @@ export async function fetchApiWithRetry(
 
 export const OpImage = async (slug: string) => {
   // Use the retry function for the API fetch
+  const apiHeaders = await publicApiHeaders();
   const [font400, font700, apiResponse] = await Promise.all([
     fetchFont(400),
     fetchFont(700),
     fetchApiWithRetry(`${getApiBaseUrl()}/reports/${slug}`, {
-      headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_PUBLIC_API_KEY || "",
-        "Content-Type": "application/json",
-      },
+      headers: apiHeaders,
     }),
   ]);
 

@@ -10,6 +10,7 @@ from src.routers import router
 from src.services.report_launcher import recover_interrupted_reports
 from src.services.report_status import load_status
 from src.services.report_sync import initialize_from_storage
+from src.tenant import tenant_middleware
 from src.utils.logger import setup_logger
 
 slogger = setup_logger()
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
 
 
 app = get_app()
+app.middleware("http")(tenant_middleware)
 
 app.add_middleware(
     CORSMiddleware,

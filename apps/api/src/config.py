@@ -11,7 +11,7 @@ env_file_path = os.environ.get("ENV_FILE", ".env")
 load_dotenv(env_file_path, override=False)
 
 Environment = Literal["development", "production"]
-StorageType = Literal["local", "azure_blob"]
+StorageType = Literal["local", "azure_blob", "s3"]
 
 
 class Settings(BaseSettings):
@@ -34,6 +34,11 @@ class Settings(BaseSettings):
 
     # ストレージ設定
     STORAGE_TYPE: StorageType = Field(env="STORAGE_TYPE", default="local")
+    S3_BUCKET: str | None = Field(env="S3_BUCKET", default=None)
+    MEMBERSHIPS_TABLE: str | None = Field(env="MEMBERSHIPS_TABLE", default=None)
+    LOCAL_LLM_ADDRESS: str | None = Field(env="LOCAL_LLM_ADDRESS", default=None)
+    EMBEDDING_MODEL: str | None = Field(env="EMBEDDING_MODEL", default=None)
+    DEFAULT_LLM_PROVIDER: str | None = Field(env="DEFAULT_LLM_PROVIDER", default=None)
     AZURE_BLOB_STORAGE_ACCOUNT_NAME: str | None = Field(env="AZURE_BLOB_STORAGE_ACCOUNT_NAME", default=None)
     AZURE_BLOB_STORAGE_CONTAINER_NAME: str | None = Field(env="AZURE_BLOB_STORAGE_CONTAINER_NAME", default=None)
 

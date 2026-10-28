@@ -1,5 +1,6 @@
 "use server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
 import { getApiBaseUrl } from "@/app/utils/api";
 import type { CsvData } from "../parseCsv";
 import type { PromptSettings } from "../types";
@@ -73,7 +74,7 @@ export async function createReport({
 }): Promise<CreateReportResult> {
   try {
     const headers: Record<string, string> = {
-      "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+      ...(await adminApiHeaders()),
       "Content-Type": "application/json",
     };
 

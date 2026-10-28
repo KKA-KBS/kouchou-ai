@@ -5,6 +5,7 @@ import { Reporter } from "@/components/reporter/Reporter";
 import type { Meta, Report } from "@/type";
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { publicApiHeaders } from "./apiHeaders";
 import { getApiBaseUrl } from "./utils/api";
 import { isStaticExportBuild, isStaticShellBuild } from "./utils/static-build";
 
@@ -65,7 +66,7 @@ export default async function Page() {
     const metaResponse = await fetch(`${getApiBaseUrl()}/meta/metadata.json`);
     const reportsResponse = await fetch(`${getApiBaseUrl()}/reports`, {
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_PUBLIC_API_KEY || "",
+        ...(await publicApiHeaders()),
         "Content-Type": "application/json",
       },
     });

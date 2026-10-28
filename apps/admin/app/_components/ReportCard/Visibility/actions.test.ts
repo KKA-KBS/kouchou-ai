@@ -16,7 +16,7 @@ global.fetch = mockFetch;
 describe("updateReportVisibility", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = "test-api-key";
+    process.env.ADMIN_API_KEY = "test-api-key";
   });
 
   afterAll(() => {

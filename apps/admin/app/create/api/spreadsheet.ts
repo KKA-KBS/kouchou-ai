@@ -1,4 +1,8 @@
+"use server";
+
 import type { SpreadsheetComment } from "../types";
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
+import { getApiBaseUrl } from "@/app/utils/api";
 import { handleApiError } from "../utils/error-handler";
 
 /**
@@ -6,12 +10,9 @@ import { handleApiError } from "../utils/error-handler";
  */
 export async function importSpreadsheet(url: string, fileName: string): Promise<void> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASEPATH}/admin/spreadsheet/import`, {
+    const response = await fetch(`${getApiBaseUrl()}/admin/spreadsheet/import`, {
       method: "POST",
-      headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
-        "Content-Type": "application/json",
-      },
+      headers: await adminApiHeaders(),
       body: JSON.stringify({
         url,
         file_name: fileName,
@@ -35,10 +36,8 @@ export async function importSpreadsheet(url: string, fileName: string): Promise<
 export async function getSpreadsheetData(id: string): Promise<{ comments: SpreadsheetComment[] }> {
   const encodedId = encodeURIComponent(id);
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASEPATH}/admin/spreadsheet/data/${encodedId}`, {
-      headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
-      },
+    const response = await fetch(`${getApiBaseUrl()}/admin/spreadsheet/data/${encodedId}`, {
+      headers: await adminApiHeaders(),
     });
 
     if (!response.ok) {
@@ -57,11 +56,9 @@ export async function getSpreadsheetData(id: string): Promise<{ comments: Spread
 export async function deleteSpreadsheetData(id: string): Promise<void> {
   const encodedId = encodeURIComponent(id);
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASEPATH}/admin/inputs/${encodedId}`, {
+    const response = await fetch(`${getApiBaseUrl()}/admin/inputs/${encodedId}`, {
       method: "DELETE",
-      headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
-      },
+      headers: await adminApiHeaders(),
     });
 
     if (!response.ok) {

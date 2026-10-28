@@ -2,6 +2,7 @@ import { Header } from "@/components/Header";
 import type { Report } from "@/type";
 import { Box, Code, Heading, Text, VStack } from "@chakra-ui/react";
 import { PageContent } from "./_components/PageContent";
+import { adminApiHeaders } from "./utils/adminHeaders";
 import { getApiBaseUrl } from "./utils/api";
 
 type ErrorInfo = {
@@ -36,7 +37,7 @@ function getHttpErrorInfo(status: number, apiUrl: string): ErrorInfo {
     case 401:
       return {
         title: "認証に失敗しました",
-        description: "APIキーが無効または設定されていません。環境変数 NEXT_PUBLIC_ADMIN_API_KEY を確認してください。",
+        description: "APIキーが無効または設定されていません。環境変数 ADMIN_API_KEY を確認してください。",
       };
     case 403:
       return {
@@ -94,7 +95,7 @@ export default async function Page() {
     const response = await fetch(`${apiUrl}/admin/reports`, {
       method: "GET",
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+        ...(await adminApiHeaders()),
         "Content-Type": "application/json",
       },
       cache: "no-store",

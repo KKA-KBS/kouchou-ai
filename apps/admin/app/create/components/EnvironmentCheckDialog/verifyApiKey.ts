@@ -1,5 +1,6 @@
 "use server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
 import { getApiBaseUrl } from "@/app/utils/api";
 
 type ErrorType = "authentication_error" | "insufficient_quota" | "rate_limit_error" | "unknown_error";
@@ -18,7 +19,7 @@ export const verifyApiKey = async (provider: string, userApiKey?: string, model?
     if (model?.trim()) params.set("model", model.trim());
     if (provider === "local" && localLLMAddress?.trim()) params.set("local_llm_address", localLLMAddress.trim());
     const headers: Record<string, string> = {
-      "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+      ...(await adminApiHeaders()),
       "Content-Type": "application/json",
     };
 
@@ -52,7 +53,7 @@ export const verifyChatGptApiKeyWithProvider = async (provider = "openai") => {
     const response = await fetch(`${getApiBaseUrl()}/admin/environment/verify-chatgpt?provider=${encodedProvider}`, {
       method: "GET",
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+        ...(await adminApiHeaders()),
         "Content-Type": "application/json",
       },
     });

@@ -12,11 +12,11 @@ describe("verifyApiKey", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // 環境変数をモック
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = "test-api-key";
+    process.env.ADMIN_API_KEY = "test-api-key";
   });
 
   afterEach(() => {
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = undefined;
+    process.env.ADMIN_API_KEY = undefined;
   });
 
   it("API検証が成功した場合、正常な結果を返すべき", async () => {

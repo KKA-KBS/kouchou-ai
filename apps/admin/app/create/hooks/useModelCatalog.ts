@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { fetchModelCatalog } from "../api/modelCatalog";
 
 export interface ModelOption {
   value: string;
@@ -49,21 +50,11 @@ export function useModelCatalog(provider: string, address?: string, enabled = tr
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    const controller = new AbortController();
     setState({ key, models: [], error: "", loading: true });
     const timer = window.setTimeout(
       async () => {
         try {
-          const params = new URLSearchParams({ provider });
-          if (provider === "local" && address) params.set("address", address.trim());
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASEPATH}/admin/models?${params}`, {
-            method: "GET",
-            headers: { "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "", "Content-Type": "application/json" },
-            signal: controller.signal,
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const models: ModelOption[] = await response.json();
-          if (!Array.isArray(models)) throw new Error("Invalid catalog");
+          const models = (await fetchModelCatalog(provider, address)) as ModelOption[];
           if (!cancelled) setState({ key, models, error: "", loading: false });
         } catch {
           if (!cancelled)
@@ -79,7 +70,6 @@ export function useModelCatalog(provider: string, address?: string, enabled = tr
     );
     return () => {
       cancelled = true;
-      controller.abort();
       window.clearTimeout(timer);
     };
   }, [provider, address, key, enabled]);

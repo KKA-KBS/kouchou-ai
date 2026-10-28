@@ -97,7 +97,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         NEXT_PUBLIC_API_BASEPATH: "http://localhost:8002",
-        NEXT_PUBLIC_ADMIN_API_KEY: "public",
+        ADMIN_API_KEY: "public",
         ADMIN_API_KEY: "public",
         API_BASEPATH: "http://localhost:8002",
       },
@@ -135,7 +135,7 @@ export default defineConfig({
       env: {
         NEXT_PUBLIC_API_BASEPATH: "http://localhost:8002",
         API_BASEPATH: "http://localhost:8002",
-        NEXT_PUBLIC_PUBLIC_API_KEY: "public",
+        PUBLIC_API_KEY: "public",
       },
     },
   ],

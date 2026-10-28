@@ -1,5 +1,6 @@
 "use server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
 import { getApiBaseUrl } from "@/app/utils/api";
 import type { PluginImportResult, PluginManifest, PluginPreviewResult } from "@/type.d";
 
@@ -9,7 +10,7 @@ import type { PluginImportResult, PluginManifest, PluginPreviewResult } from "@/
 export async function getPlugins(): Promise<PluginManifest[]> {
   const response = await fetch(`${getApiBaseUrl()}/admin/plugins`, {
     headers: {
-      "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+      ...(await adminApiHeaders()),
     },
     cache: "no-store",
   });
@@ -33,7 +34,7 @@ export async function validatePluginSource(
   const response = await fetch(`${getApiBaseUrl()}/admin/plugins/${encodedPluginId}/validate-source`, {
     method: "POST",
     headers: {
-      "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+      ...(await adminApiHeaders()),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ pluginId, source }),
@@ -54,7 +55,7 @@ export async function previewPluginData(pluginId: string, source: string, limit 
   const response = await fetch(`${getApiBaseUrl()}/admin/plugins/${encodedPluginId}/preview`, {
     method: "POST",
     headers: {
-      "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+      ...(await adminApiHeaders()),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ source, limit }),
@@ -81,7 +82,7 @@ export async function importPluginData(
   const response = await fetch(`${getApiBaseUrl()}/admin/plugins/${encodedPluginId}/import`, {
     method: "POST",
     headers: {
-      "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+      ...(await adminApiHeaders()),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

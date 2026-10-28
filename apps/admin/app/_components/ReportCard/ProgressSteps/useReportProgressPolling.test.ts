@@ -7,14 +7,14 @@ global.fetch = jest.fn();
 // Mock environment variables
 const mockEnv = {
   NEXT_PUBLIC_API_BASEPATH: "http://localhost:8000",
-  NEXT_PUBLIC_ADMIN_API_KEY: "test-api-key",
+  ADMIN_API_KEY: "test-api-key",
 };
 
 Object.defineProperty(process.env, "NEXT_PUBLIC_API_BASEPATH", {
   value: mockEnv.NEXT_PUBLIC_API_BASEPATH,
 });
-Object.defineProperty(process.env, "NEXT_PUBLIC_ADMIN_API_KEY", {
-  value: mockEnv.NEXT_PUBLIC_ADMIN_API_KEY,
+Object.defineProperty(process.env, "ADMIN_API_KEY", {
+  value: mockEnv.ADMIN_API_KEY,
 });
 
 // Mock timers

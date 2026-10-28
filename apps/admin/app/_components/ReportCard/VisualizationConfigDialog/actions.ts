@@ -1,5 +1,6 @@
 "use server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
 import { getApiBaseUrl } from "@/app/utils/api";
 import type { ReportDisplayConfig } from "@/type";
 
@@ -18,7 +19,7 @@ export async function fetchVisualizationConfig(reportSlug: string): Promise<Fetc
   try {
     const response = await fetch(`${getApiBaseUrl()}/admin/reports/${encodedReportSlug}/visualization-config`, {
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+        ...(await adminApiHeaders()),
       },
     });
 
@@ -48,7 +49,7 @@ export async function updateVisualizationConfig(
     const response = await fetch(`${getApiBaseUrl()}/admin/reports/${encodedReportSlug}/visualization-config`, {
       method: "PATCH",
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
+        ...(await adminApiHeaders()),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(config),

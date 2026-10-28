@@ -24,7 +24,7 @@ jest.mock("@/app/utils/api", () => ({
 }));
 
 // Mock environment variables
-process.env.NEXT_PUBLIC_ADMIN_API_KEY = "test-api-key";
+process.env.ADMIN_API_KEY = "test-api-key";
 
 const mockReport: Report = {
   slug: "test-report",

@@ -7,6 +7,7 @@ from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 
 from src.config import settings
+from src.tenant import current_tenant
 from src.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -362,6 +363,129 @@ class AzureBlobStorageService(StorageService):
             return False
 
 
+class S3StorageService(StorageService):
+    """S3 を Azure Blob と同じ4操作で扱う。キーは kouchou/{tenantId}/ 配下。"""
+
+    def __init__(self):
+        import boto3
+
+        bucket = settings.S3_BUCKET or os.getenv("REPORTS_BUCKET")
+        if not bucket:
+            raise ValueError("S3_BUCKET または REPORTS_BUCKET を設定してください。")
+        self.bucket = bucket
+        self.client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "ap-northeast-1"))
+
+    def _slug_from_path(self, remote_path: str) -> str | None:
+        parts = remote_path.split("/")
+        if len(parts) < 2 or parts[0] not in {"outputs", "inputs", "configs"}:
+            return None
+        name = parts[1]
+        for suffix in (".csv", ".json"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+        return name or None
+
+    def _key(self, remote_path: str) -> str:
+        normalized = remote_path.lstrip("/")
+        if normalized.startswith("status"):
+            return normalized
+        tenant = current_tenant()
+        if not tenant:
+            slug = self._slug_from_path(normalized)
+            if slug:
+                from src.services.report_status import tenant_of
+
+                tenant = tenant_of(slug)
+        if not tenant:
+            return normalized
+        return f"kouchou/{tenant}/{normalized}"
+
+    def _has_target_suffix(self, path: str, target_suffixes: tuple[str, ...] = ()) -> bool:
+        if len(target_suffixes) == 0:
+            return True
+        return any(path.endswith(suffix) for suffix in target_suffixes)
+
+    def upload_file(self, local_file_path: str, remote_blob_path: str, skip_if_same: bool = False) -> bool:
+        try:
+            if remote_blob_path.endswith("/"):
+                remote_blob_path = remote_blob_path + os.path.basename(local_file_path)
+            elif remote_blob_path in {"", "."}:
+                remote_blob_path = os.path.basename(local_file_path)
+            key = self._key(remote_blob_path)
+            if skip_if_same:
+                try:
+                    head = self.client.head_object(Bucket=self.bucket, Key=key)
+                    if head["ContentLength"] == os.path.getsize(local_file_path):
+                        logger.info(f"同一ファイルが存在します。アップロードをスキップします。キー: '{key}'")
+                        return True
+                except self.client.exceptions.ClientError:
+                    pass
+            self.client.upload_file(local_file_path, self.bucket, key)
+            logger.info(f"ファイルをアップロードしました。パス: '{local_file_path}' キー: '{key}'")
+            return True
+        except Exception as e:
+            logger.error(f"ファイルのアップロードに失敗しました。パス: '{local_file_path}' エラー: {e}")
+            return False
+
+    def upload_directory(
+        self, local_dir_path: str, remote_dir_prefix: str, target_suffixes: tuple[str, ...] = (), skip_if_same: bool = False
+    ) -> bool:
+        try:
+            uploaded = False
+            for root, _, files in os.walk(local_dir_path):
+                for name in files:
+                    if not self._has_target_suffix(name, target_suffixes):
+                        continue
+                    local_path = os.path.join(root, name)
+                    relative = os.path.relpath(local_path, local_dir_path).replace(os.sep, "/")
+                    remote = f"{remote_dir_prefix.rstrip('/')}/{relative}"
+                    if not self.upload_file(local_path, remote, skip_if_same=skip_if_same):
+                        return False
+                    uploaded = True
+            return uploaded or True
+        except Exception as e:
+            logger.error(f"ディレクトリのアップロードに失敗しました。パス: '{local_dir_path}' エラー: {e}")
+            return False
+
+    def download_file(self, remote_blob_path: str, local_file_path: str) -> bool:
+        key = self._key(remote_blob_path)
+        try:
+            parent = os.path.dirname(local_file_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            self.client.download_file(self.bucket, key, local_file_path)
+            logger.info(f"ファイルをダウンロードしました。キー: '{key}' ローカルパス: '{local_file_path}'")
+            return True
+        except Exception as e:
+            logger.error(f"ファイルのダウンロードに失敗しました。キー: '{key}' エラー: {e}")
+            return False
+
+    def download_directory(self, remote_dir_prefix: str, local_dir_path: str, target_suffixes: tuple[str, ...] = ()) -> bool:
+        prefix = self._key(remote_dir_prefix.rstrip("/") + "/")
+        try:
+            found = False
+            paginator = self.client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+                for item in page.get("Contents", []):
+                    key = item["Key"]
+                    if key.endswith("/") or not self._has_target_suffix(key, target_suffixes):
+                        continue
+                    found = True
+                    relative = key[len(prefix) :]
+                    local_path = os.path.join(local_dir_path, relative)
+                    parent = os.path.dirname(local_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    self.client.download_file(self.bucket, key, local_path)
+            if not found:
+                logger.error(f"プレフィックス: '{prefix}' のファイルが見つかりませんでした。")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"ディレクトリのダウンロードに失敗しました。プレフィックス: '{prefix}' エラー: {e}")
+            return False
+
+
 def get_storage_service() -> StorageService:
     """設定に基づいて適切なストレージサービスを返す
 
@@ -371,6 +495,7 @@ def get_storage_service() -> StorageService:
         StorageService: 設定に基づいたストレージサービスのインスタンス
             - "local": LocalStorageService
             - "azure_blob": AzureBlobStorageService
+            - "s3": S3StorageService
             - その他: LocalStorageService（デフォルト）
     """
     if settings.STORAGE_TYPE in ["local", ""] or settings.STORAGE_TYPE is None:
@@ -386,6 +511,10 @@ def get_storage_service() -> StorageService:
             f"AzureBlobStorageServiceを使用します。アカウント: {settings.AZURE_BLOB_STORAGE_ACCOUNT_NAME} コンテナ: {settings.AZURE_BLOB_STORAGE_CONTAINER_NAME}"
         )
         return AzureBlobStorageService()
+
+    elif settings.STORAGE_TYPE == "s3":
+        logger.info("S3StorageServiceを使用します")
+        return S3StorageService()
 
     logger.warning(f"STORAGE_TYPEが不明: {settings.STORAGE_TYPE}, ローカルストレージにフォールバックします")
     return LocalStorageService()

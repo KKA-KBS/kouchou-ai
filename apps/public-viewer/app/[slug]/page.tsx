@@ -6,6 +6,7 @@ import type { Meta, Report, Result } from "@/type";
 import { ReportVisibility } from "@/type";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { publicApiHeaders } from "../apiHeaders";
 import { getApiBaseUrl } from "../utils/api";
 import {
   SHELL_SLUG,
@@ -40,7 +41,7 @@ export async function generateStaticParams() {
   try {
     const response = await fetch(`${getApiBaseUrl()}/reports`, {
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_PUBLIC_API_KEY || "",
+        ...(await publicApiHeaders()),
         "Content-Type": "application/json",
       },
     });
@@ -79,7 +80,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     });
     const resultResponse = await fetch(`${getApiBaseUrl()}/reports/${slug}`, {
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_PUBLIC_API_KEY || "",
+        ...(await publicApiHeaders()),
         "Content-Type": "application/json",
       },
       next: { tags: [`report-${slug}`] },
@@ -142,7 +143,7 @@ export default async function Page({ params }: PageProps) {
     });
     resultResponse = await fetch(`${apiUrl}/reports/${slug}`, {
       headers: {
-        "x-api-key": process.env.NEXT_PUBLIC_PUBLIC_API_KEY || "",
+        ...(await publicApiHeaders()),
         "Content-Type": "application/json",
       },
       next: { tags: [`report-${slug}`] },

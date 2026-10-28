@@ -11,6 +11,7 @@ from src.schemas.admin_report import ReportInput
 from src.schemas.report import AnalysisData, Report, ReportStatus, ReportVisibility
 from src.schemas.report_config import ReportConfigUpdate
 from src.services.llm_pricing import LLMPricing
+from src.tenant import current_tenant
 
 # ロガーの設定
 logger = logging.getLogger("uvicorn")
@@ -18,6 +19,36 @@ logger = logging.getLogger("uvicorn")
 STATE_FILE = settings.DATA_DIR / "report_status.json"
 _lock = threading.RLock()
 _report_status = {}
+
+
+def _status_key(slug: str) -> str:
+    tenant = current_tenant()
+    return f"{tenant}:{slug}" if tenant else slug
+
+
+def _stamp_tenant(record: dict) -> dict:
+    tenant = current_tenant()
+    if tenant:
+        record["tenant_id"] = tenant
+    return record
+
+
+def tenant_of(slug: str) -> str | None:
+    """S3 プレフィックス用。リクエスト中のテナントを優先し、なければステータス記録を見る。"""
+    tenant = current_tenant()
+    if tenant:
+        return tenant
+    for report in _report_status.values():
+        if report.get("slug") == slug and report.get("tenant_id"):
+            return report["tenant_id"]
+    return None
+
+
+def _visible(report: dict) -> bool:
+    tenant = current_tenant()
+    if not tenant:
+        return True
+    return report.get("tenant_id") == tenant
 
 
 # FIXME: report_status.jsonのフォーマット変更に対応するためのコード。広聴AIをver3.0にした段階で削除する。
@@ -64,7 +95,11 @@ def load_status_as_reports(include_deleted: bool = False) -> list[Report]:
         except json.JSONDecodeError:
             _report_status = {}
 
-        reports = [Report(**report) for report in _report_status.values()]
+        reports = [
+            Report(**{key: value for key, value in report.items() if key != "tenant_id"})
+            for report in _report_status.values()
+            if _visible(report)
+        ]
 
         if not include_deleted:
             reports = [report for report in reports if report.status != ReportStatus.DELETED]
@@ -94,7 +129,7 @@ def save_status() -> None:
 
 def add_new_report_to_status(report_input: ReportInput) -> None:
     with _lock:
-        _report_status[report_input.input] = {
+        _report_status[_status_key(report_input.input)] = _stamp_tenant({
             "slug": report_input.input,
             "source_slug": None,
             "status": "processing",
@@ -109,13 +144,13 @@ def add_new_report_to_status(report_input: ReportInput) -> None:
             "estimated_cost": None,  # 推定コストを初期化
             "provider": None,  # LLMプロバイダーを初期化
             "model": None,  # LLMモデルを初期化
-        }
+        })
         save_status()
 
 
 def add_new_report_to_status_from_config(slug: str, config: dict, source_slug: str | None = None) -> None:
     with _lock:
-        _report_status[slug] = {
+        _report_status[_status_key(slug)] = _stamp_tenant({
             "slug": slug,
             "source_slug": source_slug,
             "status": "processing",
@@ -130,33 +165,35 @@ def add_new_report_to_status_from_config(slug: str, config: dict, source_slug: s
             "estimated_cost": None,
             "provider": config.get("provider"),
             "model": config.get("model"),
-        }
+        })
         save_status()
 
 
 def slug_exists(slug: str) -> bool:
     load_status()
-    return slug in _report_status
+    return _status_key(slug) in _report_status
 
 
 def delete_report_from_status(slug: str) -> None:
     with _lock:
-        if slug in _report_status:
-            del _report_status[slug]
+        key = _status_key(slug)
+        if key in _report_status:
+            del _report_status[key]
             save_status()
 
 
 def set_status(slug: str, status: str) -> None:
     with _lock:
-        if slug not in _report_status:
+        key = _status_key(slug)
+        if key not in _report_status:
             raise ValueError(f"slug {slug} not found in report status")
-        _report_status[slug]["status"] = status
+        _report_status[key]["status"] = status
         save_status()
 
 
 def get_status(slug: str) -> str:
     with _lock:
-        return _report_status.get(slug, {}).get("status", "undefined")
+        return _report_status.get(_status_key(slug), {}).get("status", "undefined")
 
 
 def invalidate_report_cache(slug: str) -> None:
@@ -190,11 +227,11 @@ def update_report_visibility_state(slug: str, new_visibility: ReportVisibility) 
         if slug not in _report_status:
             raise ValueError(f"slug {slug} not found in report status")
         # enumの値を文字列に変換して保存
-        _report_status[slug]["visibility"] = new_visibility.value
+        _report_status[_status_key(slug)]["visibility"] = new_visibility.value
 
         save_status()
     invalidate_report_cache(slug)
-    return _report_status[slug]["visibility"]
+    return _report_status[_status_key(slug)]["visibility"]
 
 
 def update_token_usage(
@@ -223,20 +260,20 @@ def update_token_usage(
             logger.warning(f"slug {slug} not found in report status when updating token usage")
             return
 
-        _report_status[slug]["token_usage"] = token_usage
+        _report_status[_status_key(slug)]["token_usage"] = token_usage
 
         if token_usage_input is not None:
-            _report_status[slug]["token_usage_input"] = token_usage_input
+            _report_status[_status_key(slug)]["token_usage_input"] = token_usage_input
 
         if token_usage_output is not None:
-            _report_status[slug]["token_usage_output"] = token_usage_output
+            _report_status[_status_key(slug)]["token_usage_output"] = token_usage_output
 
         if provider is not None:
-            _report_status[slug]["provider"] = provider
+            _report_status[_status_key(slug)]["provider"] = provider
             logger.info(f"Updated provider for {slug}: {provider}")
 
         if model is not None:
-            _report_status[slug]["model"] = model
+            _report_status[_status_key(slug)]["model"] = model
             logger.info(f"Updated model for {slug}: {model}")
 
         if (
@@ -246,7 +283,7 @@ def update_token_usage(
             and model is not None
         ):
             estimated_cost = LLMPricing.calculate_cost(provider, model, token_usage_input, token_usage_output)
-            _report_status[slug]["estimated_cost"] = estimated_cost
+            _report_status[_status_key(slug)]["estimated_cost"] = estimated_cost
             logger.info(f"Updated estimated cost for {slug}: {LLMPricing.format_cost(estimated_cost)}")
 
         logger.info(
@@ -275,16 +312,16 @@ def update_report_config(slug: str, updated_config: ReportConfigUpdate) -> dict:
 
         # タイトルの更新（指定された場合のみ）
         if updated_config.question is not None:
-            _report_status[slug]["title"] = updated_config.question
+            _report_status[_status_key(slug)]["title"] = updated_config.question
 
         # 説明の更新（指定された場合のみ）
         if updated_config.intro is not None:
-            _report_status[slug]["description"] = updated_config.intro
+            _report_status[_status_key(slug)]["description"] = updated_config.intro
 
         save_status()
 
     invalidate_report_cache(slug)
-    return _report_status[slug]
+    return _report_status[_status_key(slug)]
 
 
 def add_analysis_data(report: Report) -> Report:

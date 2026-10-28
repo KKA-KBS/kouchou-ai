@@ -17,7 +17,7 @@ describe("csvDownloadForWindows", () => {
     mockGetApiBaseUrl.mockReturnValue("http://localhost:8000");
 
     // 環境変数のモック
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = "test-api-key";
+    process.env.ADMIN_API_KEY = "test-api-key";
   });
 
   afterEach(() => {

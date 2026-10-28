@@ -21,12 +21,12 @@ describe("reportDelete", () => {
     // 各テスト前にモックをリセット
     jest.clearAllMocks();
     (getApiBaseUrl as jest.Mock).mockReturnValue(mockApiBaseUrl);
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = mockApiKey;
+    process.env.ADMIN_API_KEY = mockApiKey;
   });
 
   afterEach(() => {
     // 環境変数をクリア
-    process.env.NEXT_PUBLIC_ADMIN_API_KEY = undefined;
+    process.env.ADMIN_API_KEY = undefined;
   });
 
   it("成功時にDELETEリクエストを送信してsuccess:trueを返す", async () => {

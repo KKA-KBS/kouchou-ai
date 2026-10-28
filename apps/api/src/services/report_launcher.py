@@ -37,11 +37,11 @@ def _build_config(report_input: ReportInput) -> dict[str, Any]:
         "question": report_input.question,
         "intro": report_input.intro,
         "model": report_input.model,
-        "provider": report_input.provider,
+        "provider": settings.DEFAULT_LLM_PROVIDER or report_input.provider,
         "analysis_mode": report_input.analysis_mode,
         "is_pubcom": report_input.is_pubcom,
-        "is_embedded_at_local": report_input.is_embedded_at_local,
-        "local_llm_address": report_input.local_llm_address,
+        "is_embedded_at_local": False if settings.EMBEDDING_MODEL else report_input.is_embedded_at_local,
+        "local_llm_address": report_input.local_llm_address or settings.LOCAL_LLM_ADDRESS,
         "extraction": {
             "prompt": report_input.prompt.extraction,
             "workers": report_input.workers,
@@ -50,7 +50,11 @@ def _build_config(report_input: ReportInput) -> dict[str, Any]:
         "hierarchical_overview": {"prompt": report_input.prompt.overview},
         # 埋め込みモデルはチャットモデルとは独立に選択できる。未指定なら embedding セクション
         # 自体を省略し、analysis-core の normalize_config 既定 (text-embedding-3-small) に委ねる。
-        **({"embedding": {"model": report_input.embedding_model}} if report_input.embedding_model else {}),
+        **(
+            {"embedding": {"model": report_input.embedding_model or settings.EMBEDDING_MODEL}}
+            if report_input.embedding_model or settings.EMBEDDING_MODEL
+            else {}
+        ),
         "hierarchical_aggregation": {
             "sampling_num": report_input.workers,
         },

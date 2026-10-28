@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { fetchReportStep } from "./fetchReportStep";
 import { stepKeys } from "./progressStepsConfig";
 
 type Progress = (typeof stepKeys)[number] | "loading" | "completed" | "error";
-type StepJsonResponse = {
-  status?: string;
-  current_step?: string;
-  error_message?: string | null;
-  error_log_excerpt?: string | null;
-};
 
 function isProgress(value: string): value is Progress {
   return (
@@ -28,7 +23,6 @@ export function useReportProgressPoll(slug: string) {
   useEffect(() => {
     if (!isPolling) return;
 
-    const encodedSlug = encodeURIComponent(slug);
     let cancelled = false;
     let retryCount = 0;
     const maxRetries = 10;
@@ -37,21 +31,10 @@ export function useReportProgressPoll(slug: string) {
       if (cancelled) return;
 
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASEPATH}/admin/reports/${encodedSlug}/status/step-json`,
-          {
-            headers: {
-              "x-api-key": process.env.NEXT_PUBLIC_ADMIN_API_KEY || "",
-              "Content-Type": "application/json",
-              // キャッシュを防止するためのヘッダーを追加
-              "Cache-Control": "no-cache, no-store, must-revalidate",
-              Pragma: "no-cache",
-            },
-          },
-        );
+        const result = await fetchReportStep(slug);
 
-        if (response.ok) {
-          const data = (await response.json()) as StepJsonResponse;
+        if (result.ok) {
+          const data = result.body;
 
           if (!data.current_step || data.current_step === "loading") {
             retryCount = 0;

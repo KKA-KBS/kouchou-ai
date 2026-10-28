@@ -37,7 +37,7 @@ jest.mock("./actions", () => ({
 // Mock environment variable
 const originalEnv = process.env;
 beforeEach(() => {
-  process.env = { ...originalEnv, NEXT_PUBLIC_ADMIN_API_KEY: "test-api-key" };
+  process.env = { ...originalEnv, ADMIN_API_KEY: "test-api-key" };
   jest.clearAllMocks();
 });
 

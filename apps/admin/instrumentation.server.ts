@@ -12,7 +12,7 @@ export function checkEnvOverrides() {
   const envFileContent = readFileSync(envPath, "utf-8");
   const envFileVars = parseEnvFile(envFileContent);
 
-  const keysToCheck = ["API_BASEPATH", "NEXT_PUBLIC_API_BASEPATH", "NEXT_PUBLIC_ADMIN_API_KEY"];
+  const keysToCheck = ["API_BASEPATH", "NEXT_PUBLIC_API_BASEPATH", "ADMIN_API_KEY"];
 
   let hasOverride = false;
 
