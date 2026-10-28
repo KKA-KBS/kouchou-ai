@@ -3,7 +3,6 @@ FROM python:3.12-slim
 WORKDIR /app
 
 ARG ENVIRONMENT
-ARG WITH_GPU=false
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -20,23 +19,15 @@ COPY apps/api/pyproject.toml apps/api/requirements.lock apps/api/requirements-de
 # Copy and install analysis-core package
 COPY packages/analysis-core /packages/analysis-core
 
-# Install all dependencies in a single RUN to prevent torch from being installed
-# multiple times across Docker layers, which causes significant image bloat.
-# torch is resolved as a transitive dependency of analysis-core.
-# For CPU mode, use the PyTorch CPU-only index as --extra-index-url so it takes
-# priority over the primary PyPI index (uv searches extra indexes first).
-RUN set -- "/packages/analysis-core[full]" && \
+# ステージングの埋め込みは Titan なので、ローカル埋め込み用の torch は入れない。
+# full には embeddings（sentence-transformers と torch）が含まれる。
+RUN set -- "/packages/analysis-core[gemini,clustering]" && \
     if [ "$ENVIRONMENT" = "development" ]; then \
         set -- "$@" -r requirements-dev.lock; \
     else \
         set -- "$@" -r requirements.lock; \
     fi && \
-    if [ "$WITH_GPU" != "true" ]; then \
-        set -- --index-url https://pypi.org/simple/ \
-               --extra-index-url https://download.pytorch.org/whl/cpu \
-               --index-strategy unsafe-first-match "$@"; \
-    fi && \
-    echo "Installing dependencies (GPU=$WITH_GPU, ENV=$ENVIRONMENT)" && \
+    echo "Installing dependencies (ENV=$ENVIRONMENT)" && \
     uv pip install --no-cache --system "$@" "boto3>=1.35.0"
 
 # Copy application source
