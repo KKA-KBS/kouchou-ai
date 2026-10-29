@@ -1,3 +1,4 @@
+import { SessionBar } from "@/components/SessionBar";
 import { Alert, Box, Flex, Image } from "@chakra-ui/react";
 import Link from "next/link";
 
@@ -9,6 +10,7 @@ export function Header() {
           <Image src="/images/logo.svg" alt="広聴AI" cursor="pointer" />
         </Link>
         <Box>
+          <SessionBar />
           <Alert.Root status="warning">
             <Alert.Indicator />
             <Alert.Content>

@@ -1,9 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+function tenantGate(req: NextRequest) {
+  if (!req.headers.get("x-amzn-oidc-identity")) return null;
+  if (req.nextUrl.pathname === "/not-admin") return null;
+  if (!req.cookies.get("dd_tenant")) {
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+    const returnTo = encodeURIComponent(`https://${host}${req.nextUrl.pathname}${req.nextUrl.search}`);
+    return NextResponse.redirect(new URL(`/session?return=${returnTo}`, req.url));
+  }
+  if (req.cookies.get("dd_role")?.value !== "tenant-admin") {
+    return NextResponse.rewrite(new URL("/not-admin", req.url));
+  }
+  return null;
+}
+
 export function middleware(req: NextRequest) {
   if (req.nextUrl.pathname === "/api/healthcheck") {
     return NextResponse.next();
   }
+
+  const gated = tenantGate(req);
+  if (gated) return gated;
 
   if (
     process.env.BASIC_AUTH_USERNAME === undefined ||

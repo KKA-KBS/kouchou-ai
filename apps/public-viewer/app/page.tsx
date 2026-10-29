@@ -6,6 +6,7 @@ import type { Meta, Report } from "@/type";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { publicApiHeaders } from "./apiHeaders";
+import { ensureTenantCookie } from "./tenantGate";
 import { getApiBaseUrl } from "./utils/api";
 import { isStaticExportBuild, isStaticShellBuild } from "./utils/static-build";
 
@@ -55,6 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Page() {
   if (!isStaticExportBuild()) {
     await connection();
+    await ensureTenantCookie("/");
   }
 
   // shell ビルドではレポート一覧を実行時に同梱 JSON から読む。

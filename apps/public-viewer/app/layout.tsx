@@ -1,3 +1,4 @@
+import { SessionBar } from "@/components/SessionBar";
 import { getImageFromServerSrc } from "@/app/utils/image-src";
 import { LocalFileNotice } from "@/components/report/LocalFileNotice";
 import { Provider } from "@/components/ui/provider";
@@ -22,7 +23,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body>
         <div id="report-app">
-          <Provider>{children}</Provider>
+          <Provider>
+            <SessionBar />
+            {children}
+          </Provider>
         </div>
         <LocalFileNotice />
       </body>

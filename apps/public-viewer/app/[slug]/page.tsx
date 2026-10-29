@@ -6,7 +6,9 @@ import type { Meta, Report, Result } from "@/type";
 import { ReportVisibility } from "@/type";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { publicApiHeaders } from "../apiHeaders";
+import { ensureTenantCookie } from "../tenantGate";
 import { getApiBaseUrl } from "../utils/api";
 import {
   SHELL_SLUG,
@@ -131,7 +133,17 @@ export default async function Page({ params }: PageProps) {
     return <ReportShell />;
   }
 
+  // revalidate があるので静的ページになる。そのあと headers() を読むと
+  // 「Page changed from static to dynamic」で描画が中断し、config が無い状態で question を読む。
+  // 一覧ページと同じく、先にリクエストへ接続して動的にする。
+  if (!isStaticExportBuild()) {
+    await connection();
+  }
+
   const slug = (await params).slug;
+  if (!isStaticExportBuild()) {
+    await ensureTenantCookie(`/${slug}/`);
+  }
   const apiUrl = getApiBaseUrl();
 
   let metaResponse: Response;

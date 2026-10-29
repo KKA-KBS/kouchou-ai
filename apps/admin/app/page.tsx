@@ -2,6 +2,7 @@ import { Header } from "@/components/Header";
 import type { Report } from "@/type";
 import { Box, Code, Heading, Text, VStack } from "@chakra-ui/react";
 import { PageContent } from "./_components/PageContent";
+import { adminTenantGate } from "./tenantGate";
 import { adminApiHeaders } from "./utils/adminHeaders";
 import { getApiBaseUrl } from "./utils/api";
 
@@ -89,6 +90,20 @@ function ErrorDisplay({ errorInfo }: { errorInfo: ErrorInfo }) {
 }
 
 export default async function Page() {
+  const gate = await adminTenantGate("/");
+  if (gate === "member") {
+    return (
+      <Box className="container" bgColor="bg.secondary">
+        <Header />
+        <Box mx="auto" maxW="600px" px="6" py="12">
+          <Heading textAlign="center" fontSize="xl">
+            このテナントの管理者ではありません
+          </Heading>
+        </Box>
+      </Box>
+    );
+  }
+
   const apiUrl = getApiBaseUrl();
 
   try {
