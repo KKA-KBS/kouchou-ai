@@ -10,6 +10,8 @@ from src.schemas.public_report_result import PublicReportResult
 from src.schemas.report import Report, ReportStatus, ReportVisibility
 from src.schemas.visualization_config import DEFAULT_REPORT_DISPLAY_CONFIG, parse_saved_visualization_config
 from src.services.report_status import load_status_as_reports
+from src.services.report_sync import ReportSyncService
+from src.tenant import current_tenant
 from src.utils.slug_utils import validate_slug
 
 logger = logging.getLogger("uvicorn")
@@ -19,8 +21,27 @@ router = APIRouter()
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
 
+def _report_result_path(slug: str):
+    return settings.REPORT_DIR / slug / "hierarchical_result.json"
+
+
+def _ensure_report_result(slug: str) -> bool:
+    """表示に必要な結果ファイルを手元に用意する。
+
+    リクエストのテナントがあるときだけ、そのテナントの S3 から取る。
+    テナントが空のときは他テナントを探さない。
+    """
+    report_path = _report_result_path(slug)
+    if report_path.exists():
+        return True
+    if not current_tenant():
+        return False
+    ReportSyncService().download_report_artifacts(slug, ("hierarchical_result.json",))
+    return report_path.exists()
+
+
 def _load_validated_report_result(slug: str) -> dict:
-    report_path = settings.REPORT_DIR / slug / "hierarchical_result.json"
+    report_path = _report_result_path(slug)
 
     with open(report_path, encoding="utf-8") as f:
         report_result = json.load(f)
@@ -53,7 +74,6 @@ async def reports() -> list[Report]:
 async def report(slug: str, api_key: str = Depends(verify_public_api_key)) -> dict:
     """公開可能なレポートに可視化設定を添え、古い密度項目だけを読み込み時に補正する。"""
     validate_slug(slug)
-    report_path = settings.REPORT_DIR / slug / "hierarchical_result.json"
     all_reports = load_status_as_reports()
     target_report_status = next((report for report in all_reports if report.slug == slug), None)
 
@@ -63,7 +83,7 @@ async def report(slug: str, api_key: str = Depends(verify_public_api_key)) -> di
         raise HTTPException(status_code=404, detail="Report is not ready")
     if target_report_status.visibility == ReportVisibility.PRIVATE:
         raise HTTPException(status_code=404, detail="Report is private")
-    if not report_path.exists():
+    if not _ensure_report_result(slug):
         raise HTTPException(status_code=404, detail="Report not found")
 
     report_result = _load_validated_report_result(slug)

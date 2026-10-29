@@ -145,6 +145,63 @@ class TestReportEndpoint:
         assert response.status_code == 500
         assert response.json()["detail"] == "Invalid report data"
 
+    def test_missing_result_is_loaded_only_for_the_current_tenant(self, client: TestClient, temp_report_dir, test_settings):
+        """手元に結果が無くても、今のテナントの保管先から取れれば表示できる"""
+        slug = "remote-report"
+        mock_reports = [
+            type("Report", (), {"slug": slug, "status": ReportStatus.READY, "visibility": ReportVisibility.PUBLIC})()
+        ]
+        calls = []
+
+        class Sync:
+            def download_report_artifacts(self, slug_arg, patterns):
+                calls.append((slug_arg, patterns))
+                path = temp_report_dir / slug_arg / "hierarchical_result.json"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(
+                    json.dumps(
+                        {"config": {"question": "遠隔"}, "overview": "概要", "clusters": [], "arguments": []}
+                    ),
+                    encoding="utf-8",
+                )
+                return True
+
+        with (
+            patch("src.routers.report.settings.REPORT_DIR", temp_report_dir),
+            patch("src.routers.report.load_status_as_reports", return_value=mock_reports),
+            patch("src.routers.report.current_tenant", return_value="ashisuto"),
+            patch("src.routers.report.ReportSyncService", Sync),
+        ):
+            response = client.get(f"/reports/{slug}", headers={"x-api-key": test_settings.PUBLIC_API_KEY})
+
+        assert response.status_code == 200
+        assert response.json()["config"]["question"] == "遠隔"
+        assert calls == [(slug, ("hierarchical_result.json",))]
+
+    def test_missing_result_without_tenant_does_not_search_other_tenants(
+        self, client: TestClient, temp_report_dir, test_settings
+    ):
+        """テナントが空のときは、他テナントの結果を探しにいかない"""
+        slug = "remote-report"
+        mock_reports = [
+            type("Report", (), {"slug": slug, "status": ReportStatus.READY, "visibility": ReportVisibility.PUBLIC})()
+        ]
+
+        class Sync:
+            def download_report_artifacts(self, slug_arg, patterns):
+                raise AssertionError("must not download without a tenant")
+
+        with (
+            patch("src.routers.report.settings.REPORT_DIR", temp_report_dir),
+            patch("src.routers.report.load_status_as_reports", return_value=mock_reports),
+            patch("src.routers.report.current_tenant", return_value=None),
+            patch("src.routers.report.ReportSyncService", Sync),
+        ):
+            response = client.get(f"/reports/{slug}", headers={"x-api-key": test_settings.PUBLIC_API_KEY})
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Report not found"
+
 
 class TestVisualizationConfigMerge:
     """Test cases for visualization config merge in /reports/{slug} endpoint."""
