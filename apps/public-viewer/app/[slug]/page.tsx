@@ -24,8 +24,9 @@ type PageProps = {
   }>;
 };
 
-// ISR 5分おきにレポート更新確認
-export const revalidate = 300;
+// revalidate を付けると静的ページになり、connection() や headers() が
+// DYNAMIC_SERVER_USAGE で描画を止める。テナントのクッキーを読むので毎回描画する。
+export const dynamic = "force-dynamic";
 
 export async function generateStaticParams() {
   if (!isStaticExportBuild()) {
@@ -133,9 +134,6 @@ export default async function Page({ params }: PageProps) {
     return <ReportShell />;
   }
 
-  // revalidate があるので静的ページになる。そのあと headers() を読むと
-  // 「Page changed from static to dynamic」で描画が中断し、config が無い状態で question を読む。
-  // 一覧ページと同じく、先にリクエストへ接続して動的にする。
   if (!isStaticExportBuild()) {
     await connection();
   }

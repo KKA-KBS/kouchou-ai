@@ -9,6 +9,8 @@ import { isStaticExportBuild } from "../utils/static-build";
 import { Contact } from "./Contact";
 import { Faq } from "./Faq";
 
+export const dynamic = "force-dynamic";
+
 export default async function Page() {
   if (!isStaticExportBuild()) {
     await connection();

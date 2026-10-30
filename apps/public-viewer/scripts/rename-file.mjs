@@ -1,7 +1,12 @@
 import { constants } from "node:fs";
-import { access, copyFile, rename, unlink } from "node:fs/promises";
+import { access, copyFile, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// サーバー起動ではクッキーを読むため force-dynamic。静的書き出しは force-static でないと build できない。
+const dynamicPages = ["app/page.tsx", "app/[slug]/page.tsx", "app/faq/page.tsx"];
+const forceDynamic = 'export const dynamic = "force-dynamic";';
+const forceStatic = 'export const dynamic = "force-static";';
 
 let ignoreFiles = [];
 
@@ -33,7 +38,20 @@ async function renameWithFallback(oldPath, newPath) {
   }
 }
 
+async function setPageDynamic(next) {
+  if (process.env.NEXT_PUBLIC_OUTPUT_MODE !== "export") return;
+  const from = next === "force-static" ? forceDynamic : forceStatic;
+  const to = next === "force-static" ? forceStatic : forceDynamic;
+  for (const file of dynamicPages) {
+    const filePath = resolve(file);
+    const text = await readFile(filePath, "utf8");
+    if (!text.includes(from)) continue;
+    await writeFile(filePath, text.replace(from, to));
+  }
+}
+
 export async function renameFiles() {
+  await setPageDynamic("force-static");
   for (const file of ignoreFiles) {
     const filePath = resolve(file);
     const renamedPath = resolve(file.replace(/([^/]+)$/, "_$1"));
@@ -49,6 +67,7 @@ export async function renameFiles() {
 }
 
 export async function restoreFiles() {
+  await setPageDynamic("force-dynamic");
   for (const file of ignoreFiles) {
     const filePath = resolve(file);
     const renamedPath = resolve(file.replace(/([^/]+)$/, "_$1"));

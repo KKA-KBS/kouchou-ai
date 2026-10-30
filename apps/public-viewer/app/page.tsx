@@ -10,7 +10,8 @@ import { ensureTenantCookie } from "./tenantGate";
 import { getApiBaseUrl } from "./utils/api";
 import { isStaticExportBuild, isStaticShellBuild } from "./utils/static-build";
 
-export const revalidate = 300;
+// テナントのクッキーを読む。revalidate を付けると DYNAMIC_SERVER_USAGE になる。
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   if (!isStaticExportBuild()) {
