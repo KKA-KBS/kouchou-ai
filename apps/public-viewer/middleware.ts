@@ -5,7 +5,7 @@ export function middleware(req: NextRequest) {
   if (req.cookies.get("dd_tenant")) return NextResponse.next();
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
   const returnTo = encodeURIComponent(`https://${host}${req.nextUrl.pathname}${req.nextUrl.search}`);
-  return NextResponse.redirect(new URL(`/session?return=${returnTo}`, req.url));
+  return NextResponse.redirect(`https://${host}/session?return=${returnTo}`);
 }
 
 export const config = {

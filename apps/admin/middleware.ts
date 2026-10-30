@@ -2,11 +2,12 @@ import { type NextRequest, NextResponse } from "next/server";
 
 function tenantGate(req: NextRequest) {
   if (!req.headers.get("x-amzn-oidc-identity")) return null;
-  if (req.nextUrl.pathname === "/not-admin") return null;
+  const path = req.nextUrl.pathname;
+  if (path === "/not-admin" || path === "/session" || path.startsWith("/session/")) return null;
   if (!req.cookies.get("dd_tenant")) {
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
-    const returnTo = encodeURIComponent(`https://${host}${req.nextUrl.pathname}${req.nextUrl.search}`);
-    return NextResponse.redirect(new URL(`/session?return=${returnTo}`, req.url));
+    const returnTo = encodeURIComponent(`https://${host}${path}${req.nextUrl.search}`);
+    return NextResponse.redirect(`https://${host}/session?return=${returnTo}`);
   }
   if (req.cookies.get("dd_role")?.value !== "tenant-admin") {
     return NextResponse.rewrite(new URL("/not-admin", req.url));
