@@ -1,5 +1,6 @@
 "use client";
 
+import { providerLabel } from "@/app/utils/llmProviders";
 import { createUUID } from "@/app/utils/uuid";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +61,7 @@ function Dialog({ provider, userApiKey, model, localLLMAddress }: EnvironmentChe
           >
             <Text textStyle="body/md">表示中の設定でチャット接続を確認します。</Text>
             <Text mt="2" fontSize="sm" overflowWrap="anywhere">
-              {provider} / {provider === "azure" ? "サーバー設定済みデプロイ" : model || "検証用モデル"}
+              {providerLabel(provider)} / {provider === "azure" ? "サーバー設定済みデプロイ" : model || "検証用モデル"}
               {provider === "local" && ` / ${localLLMAddress || "接続先未設定"}`}
             </Text>
             <Image src="/images/check-api-img.svg" alt="" mt="6" />

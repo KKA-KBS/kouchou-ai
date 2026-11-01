@@ -1,5 +1,6 @@
 "use client";
 
+import { providerLabel } from "@/app/utils/llmProviders";
 import { DialogBody, DialogContent, DialogFooter, DialogHeader, DialogRoot, DialogTitle } from "@/components/ui/dialog";
 import { Box, Button, HStack, Text, VStack } from "@chakra-ui/react";
 import { useRef, useState } from "react";
@@ -103,7 +104,7 @@ export function CreateReportConfirmation({
                 クラスタ数：第1階層 {request.cluster[0]} / 第2階層 {request.cluster[1]}
               </Text>
               <Text>
-                AI：{request.provider} / {request.provider === "azure" ? "サーバー設定を使用" : request.model}
+                AI：{providerLabel(request.provider)} / {request.provider === "azure" ? "サーバー設定を使用" : request.model}
               </Text>
               <Text>並列数：{request.workers}</Text>
             </Box>

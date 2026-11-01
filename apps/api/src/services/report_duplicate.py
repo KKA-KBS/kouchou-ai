@@ -12,6 +12,7 @@ from src.config import settings
 from src.schemas.admin_report import ReportDuplicateOverrides, ReportDuplicateRequest
 from src.schemas.report_config import ReportConfig
 from src.services.analysis_config import prune_config_for_mode
+from src.services.llm_provider import apply_server_llm_settings
 from src.services.report_launcher import launch_report_generation_from_config
 from src.services.report_status import (
     add_new_report_to_status_from_config,
@@ -372,6 +373,7 @@ def duplicate_report(
         config["input"] = new_slug
         # Keep source_slug in status only; analysis-core config schema doesn't accept it.
         config = _apply_overrides(config, payload.overrides)
+        config = apply_server_llm_settings(config)
         if input_limit_override is not None:
             config.setdefault("extraction", {})["limit"] = input_limit_override
 

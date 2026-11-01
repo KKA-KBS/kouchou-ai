@@ -2,6 +2,7 @@
 
 import { ClusterSettingsSection } from "@/app/create/components/ClusterSettingsSection";
 import { modelDescription as describeModel, modelLabel, useModelCatalog } from "@/app/create/hooks/useModelCatalog";
+import { AVAILABLE_PROVIDERS, PROVIDER_LABELS, normalizeProvider } from "@/app/utils/llmProviders";
 import {
   DialogBackdrop,
   DialogBody,
@@ -72,7 +73,7 @@ export function DuplicateReportDialog({ report, isOpen, setIsOpen }: Props) {
 
   const [question, setQuestion] = useState("");
   const [intro, setIntro] = useState("");
-  const [provider, setProvider] = useState("openai");
+  const [provider, setProvider] = useState<string>(normalizeProvider(undefined, "openai"));
   const [model, setModel] = useState("");
   const [clusterLv1, setClusterLv1] = useState(5);
   const [clusterLv2, setClusterLv2] = useState(50);
@@ -95,9 +96,11 @@ export function DuplicateReportDialog({ report, isOpen, setIsOpen }: Props) {
   }, [reuseEnabled]);
 
   const catalog = useModelCatalog(provider, undefined, isOpen && provider !== "local");
-  const selectedModel = catalog.models.find((option) => option.value === model);
+  // カタログには埋め込みモデルも入るので、生成に使うチャットモデルだけを選ばせる
+  const chatModels = catalog.models.filter((option) => (option.kind ?? "chat") === "chat");
+  const selectedModel = chatModels.find((option) => option.value === model);
   const modelOptions =
-    model && !selectedModel ? [{ value: model, label: model, available: false }, ...catalog.models] : catalog.models;
+    model && !selectedModel ? [{ value: model, label: model, available: false }, ...chatModels] : chatModels;
   const modelError =
     provider === "local"
       ? !model
@@ -111,9 +114,8 @@ export function DuplicateReportDialog({ report, isOpen, setIsOpen }: Props) {
             : "");
   const modelDescription = modelError || describeModel(provider === "azure" ? catalog.models[0] : selectedModel);
   useEffect(() => {
-    if (!model && catalog.models.length)
-      setModel(catalog.models.find((option) => option.available !== false)?.value || "");
-  }, [catalog.models, model]);
+    if (!model && chatModels.length) setModel(chatModels.find((option) => option.available !== false)?.value || "");
+  }, [chatModels, model]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -145,8 +147,10 @@ export function DuplicateReportDialog({ report, isOpen, setIsOpen }: Props) {
         setConfig(nextConfig);
         setQuestion(nextConfig.question || "");
         setIntro(nextConfig.intro || "");
-        setProvider(nextConfig.provider || "openai");
-        setModel(nextConfig.model || "");
+        const nextProvider = normalizeProvider(nextConfig.provider, "openai");
+        setProvider(nextProvider);
+        // 複製元と違うプロバイダに替わったときは、そのプロバイダのモデルを選び直す
+        setModel(nextProvider === (nextConfig.provider || "openai") ? nextConfig.model || "" : "");
         const clusterNums = nextConfig.hierarchical_clustering?.cluster_nums || [5, 50];
         const lv1 = clusterNums[0] ?? 5;
         const lv2 = clusterNums[1] ?? Math.max(lv1 * 2, 10);
@@ -351,11 +355,11 @@ export function DuplicateReportDialog({ report, isOpen, setIsOpen }: Props) {
                         setModel("");
                       }}
                     >
-                      <option value={"openai"}>OpenAI</option>
-                      <option value={"azure"}>Azure</option>
-                      <option value={"openrouter"}>OpenRouter</option>
-                      <option value={"gemini"}>Gemini</option>
-                      <option value={"local"}>LocalLLM</option>
+                      {AVAILABLE_PROVIDERS.map((value) => (
+                        <option key={value} value={value}>
+                          {PROVIDER_LABELS[value]}
+                        </option>
+                      ))}
                     </NativeSelect.Field>
                     <NativeSelect.Indicator />
                   </NativeSelect.Root>

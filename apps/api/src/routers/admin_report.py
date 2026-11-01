@@ -31,6 +31,8 @@ from src.schemas.visualization_config import ReportDisplayConfig, parse_saved_vi
 from src.services.analysis_config import prune_config_for_mode
 from src.services.llm_models import get_models_by_provider
 from src.services.llm_pricing import LLMPricing
+from src.services.llm_provider import BEDROCK_PROVIDER
+from src.services.model_catalog import BEDROCK_CHAT_MODEL
 from src.services.report_duplicate import duplicate_report, slug_exists_anywhere
 from src.services.report_launcher import execute_aggregation, launch_report_generation
 from src.services.report_status import (
@@ -522,7 +524,7 @@ async def update_visualization_config(
 
 @router.get("/admin/models")
 async def get_models(
-    provider: str = Query(..., description="LLMプロバイダー名 (openai, azure, openrouter, gemini, local)"),
+    provider: str = Query(..., description="LLMプロバイダー名 (openai, azure, openrouter, gemini, local, bedrock)"),
     address: str | None = Query(None, description="LocalLLM用アドレス（例: 127.0.0.1:1234）"),
     api_key: str = Depends(verify_admin_api_key),
 ) -> list[dict]:
@@ -559,12 +561,17 @@ async def verify_api_key(
 
     from analysis_core.services.llm import request_to_chat_ai
 
-    if provider not in {"openai", "azure", "openrouter", "gemini", "local"}:
+    if provider not in {"openai", "azure", "openrouter", "gemini", "local", BEDROCK_PROVIDER}:
         raise HTTPException(status_code=400, detail="Unsupported provider")
     model = model.strip() if model else None
     local_llm_address = local_llm_address.strip() if local_llm_address else None
     if provider == "local" and (not model or not local_llm_address):
         raise HTTPException(status_code=400, detail="Local provider requires model and local_llm_address")
+    if provider == BEDROCK_PROVIDER:
+        # 接続先は画面から受け取らない。サーバーの LiteLLM だけを確かめる。
+        if not settings.LOCAL_LLM_ADDRESS:
+            raise HTTPException(status_code=400, detail="Bedrock provider requires LOCAL_LLM_ADDRESS on the server")
+        local_llm_address = settings.LOCAL_LLM_ADDRESS
 
     try:
         test_messages = [
@@ -577,6 +584,7 @@ async def verify_api_key(
             "azure": "gpt-4o-mini",
             "openrouter": "openai/gpt-4o-mini-2024-07-18",
             "gemini": "gemini-2.5-flash",
+            BEDROCK_PROVIDER: BEDROCK_CHAT_MODEL,
         }
         model = model or model_map.get(provider, "gpt-4o-mini")
         user_api_key = request.headers.get("x-user-api-key")
@@ -588,7 +596,7 @@ async def verify_api_key(
             model=model,
             provider=provider,
             user_api_key=user_api_key or None,
-            local_llm_address=local_llm_address if provider == "local" else None,
+            local_llm_address=local_llm_address if provider in ("local", BEDROCK_PROVIDER) else None,
             timeout_seconds=30,
         )
 

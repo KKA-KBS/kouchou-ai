@@ -12,6 +12,7 @@ import polars as pl
 from src.config import settings
 from src.schemas.admin_report import ReportInput
 from src.services.analysis_config import prune_config_for_mode
+from src.services.llm_provider import apply_server_llm_settings
 from src.services.report_status import (
     add_new_report_to_status,
     processing_report_scopes,
@@ -86,6 +87,8 @@ def _build_config(report_input: ReportInput) -> dict[str, Any]:
             "sampling_num": 30,
             "workers": report_input.workers,
         }
+
+    config = apply_server_llm_settings(config)
 
     # 分岐で既に正しい section だけを組んでいるが、analysis_mode 非該当セクションが
     # 混入しないことを共通ヘルパで保証する（書き戻し経路と同じ不変条件）。

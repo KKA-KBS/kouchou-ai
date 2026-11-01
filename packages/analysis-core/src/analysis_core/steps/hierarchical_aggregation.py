@@ -165,6 +165,7 @@ def create_custom_intro(config):
             "azure": "Azure OpenAI API",
             "openrouter": "OpenRouter API",
             "local": "Local LLM",
+            "bedrock": "Amazon Bedrock",
         }
 
         provider_name = provider_names.get(provider, f"{provider} API")

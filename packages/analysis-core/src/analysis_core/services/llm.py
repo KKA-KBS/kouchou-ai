@@ -635,6 +635,8 @@ def request_to_chat_ai(
         - provider="local": ローカルLLM（OllamaやLM Studio）を使用
         - provider="openrouter": OpenRouter APIを使用（OpenAIやGeminiのモデルにアクセス可能）
         - provider="gemini": Google Gemini APIを使用
+        - provider="bedrock": Amazon Bedrock を OpenAI 互換のゲートウェイ（LiteLLM）経由で使用。
+          接続先は local_llm_address で、省略時の既定値は持たない
     """
     if provider == "azure":
         return request_to_azure_chatcompletion(messages, is_json, json_schema, user_api_key, timeout_seconds)
@@ -643,6 +645,10 @@ def request_to_chat_ai(
     elif provider == "local":
         address = local_llm_address or "localhost:11434"
         return request_to_local_llm(messages, model, is_json, json_schema, address, timeout_seconds)
+    elif provider == "bedrock":
+        return request_to_local_llm(
+            messages, model, is_json, json_schema, _bedrock_gateway_address(local_llm_address), timeout_seconds
+        )
     elif provider == "gemini":
         return request_to_gemini_chatcompletion(messages, model, is_json, json_schema, user_api_key, timeout_seconds)
     elif provider == "openrouter":
@@ -658,6 +664,13 @@ EMBDDING_MODELS = [
     "text-embedding-3-large",
     "text-embedding-3-small",
 ]
+
+
+def _bedrock_gateway_address(address: str | None) -> str:
+    # 黙って localhost の Ollama に繋ぐと、意図しない先で完走しうるので既定値を持たない
+    if not address:
+        raise ValueError("Bedrock provider requires local_llm_address (the LiteLLM gateway address)")
+    return address
 
 
 def _validate_model(model):
@@ -743,6 +756,8 @@ def request_to_embed(
     elif provider == "local":
         address = local_llm_address or "localhost:11434"
         return request_to_local_llm_embed(args, model, address)
+    elif provider == "bedrock":
+        return request_to_local_llm_embed(args, model, _bedrock_gateway_address(local_llm_address))
     else:
         raise ValueError(f"Unknown provider: {provider}")
 

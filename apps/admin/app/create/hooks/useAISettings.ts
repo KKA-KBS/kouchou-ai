@@ -1,8 +1,9 @@
 import { type ModelOption, modelDescription, useModelCatalog } from "./useModelCatalog";
 export type { ModelOption } from "./useModelCatalog";
 import { type ChangeEvent, useEffect, useState } from "react";
+import { type Provider, normalizeProvider, usesServerEmbedding } from "@/app/utils/llmProviders";
 
-export type Provider = "openai" | "azure" | "openrouter" | "gemini" | "local";
+export type { Provider } from "@/app/utils/llmProviders";
 
 // 分析方式。"hierarchical"=埋め込みベースの階層クラスタリング（既定）、
 // "llm_grouping"=LLM 直接グルーピング
@@ -27,8 +28,11 @@ const isEmbeddingRow = (option: ModelOption): boolean => (option.kind ?? "chat")
 // LocalLLMのデフォルトアドレスを定数化
 const DEFAULT_LOCAL_LLM_ADDRESS = process.env.NEXT_PUBLIC_LOCAL_LLM_ADDRESS || "ollama:11434";
 
-// USE_AZUREがtrueの場合はAzure OpenAIをデフォルトにする
-const DEFAULT_PROVIDER: Provider = process.env.NEXT_PUBLIC_USE_AZURE === "true" ? "azure" : "openai";
+// プロバイダが固定されていればそれ。USE_AZUREがtrueの場合はAzure OpenAIをデフォルトにする
+const DEFAULT_PROVIDER: Provider = normalizeProvider(
+  undefined,
+  process.env.NEXT_PUBLIC_USE_AZURE === "true" ? "azure" : "openai",
+);
 
 /**
  * LocalStorageから値を取得する関数
@@ -70,8 +74,9 @@ function saveToStorage<T>(key: string, value: T): void {
  * AIモデル設定を管理するカスタムフック
  */
 export function useAISettings() {
+  // 保存済みの値がこの画面で選べないプロバイダなら既定に戻す
   const [provider, setProvider] = useState<Provider>(() =>
-    getFromStorage<Provider>(STORAGE_KEYS.PROVIDER, DEFAULT_PROVIDER),
+    normalizeProvider(getFromStorage<string>(STORAGE_KEYS.PROVIDER, DEFAULT_PROVIDER), DEFAULT_PROVIDER),
   );
   const [model, setModel] = useState<string>(() => getFromStorage<string>(STORAGE_KEYS.MODEL, ""));
   const [embeddingModel, setEmbeddingModel] = useState<string>(() =>
@@ -99,11 +104,13 @@ export function useAISettings() {
   // 1 回のカタログ取得にチャット・埋め込み両方のモデルが含まれるので、種別で振り分ける。
   const chatModels = catalog.models.filter((option) => !isEmbeddingRow(option));
   const embeddingModels = catalog.models.filter(isEmbeddingRow);
-  // サーバ内埋め込み(ローカル)有効時と Azure(サーバー設定)では、埋め込みモデルの選択は使われない。
-  const embeddingModelSelectionIgnored = isEmbeddedAtLocal || provider === "azure";
+  // サーバ内埋め込み(ローカル)有効時と Azure・Bedrock(サーバー設定)では、埋め込みモデルの選択は使われない。
+  const embeddingModelSelectionIgnored = isEmbeddedAtLocal || usesServerEmbedding(provider);
 
   useEffect(() => {
     if (provider === "local") setIsEmbeddedAtLocal(true);
+    // Bedrock は埋め込みもサーバーの Bedrock で行う。サーバ内のローカルモデルは使わない。
+    if (provider === "bedrock") setIsEmbeddedAtLocal(false);
   }, [provider]);
   useEffect(() => {
     // Empty means a new selection. Never overwrite restored/deprecated settings.
@@ -156,7 +163,8 @@ export function useAISettings() {
   };
 
   const handleProviderChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    setProvider(e.target.value as Provider);
+    // 再利用元の config のプロバイダも通るので、この画面で選べる値にそろえる
+    setProvider(normalizeProvider(e.target.value, DEFAULT_PROVIDER));
     setModel("");
     setEmbeddingModel("");
   };
@@ -240,6 +248,7 @@ export function useAISettings() {
     openrouter: "OpenRouterを使用して複数のモデルにアクセスします。",
     gemini: "Google Gemini APIを使用します。GoogleのAPIキーが必要です。",
     local: "ローカルで実行されているLLMサーバーに接続します。",
+    bedrock: "東京リージョンのAmazon Bedrockを使用します。接続先と認証はサーバーに設定済みです。",
   };
   const getProviderDescription = () => descriptions[provider];
   const getCurrentModels = (): ModelOption[] => {
@@ -270,6 +279,8 @@ export function useAISettings() {
   const getEmbeddingModelDescription = () => {
     if (provider === "azure")
       return "Azure OpenAIでは、サーバーに設定された埋め込みモデルを使用します。この画面では変更できません。";
+    if (provider === "bedrock")
+      return `Bedrockでは、サーバーに設定された埋め込みモデル（${embeddingModels[0]?.label || "Amazon Titan Text Embeddings V2"}）を使用します。この画面では変更できません。`;
     if (isEmbeddedAtLocal)
       return "サーバ内埋め込み（ローカルモデル）が有効なため、ここでの埋め込みモデル選択は使用されません。";
     return embeddingModelError || modelDescription(selectedEmbeddingModel);
@@ -297,7 +308,7 @@ export function useAISettings() {
    * LocalLLMプロバイダーの場合は常にtrueで無効化される
    */
   const isEmbeddedAtLocalDisabled = () => {
-    return provider === "local";
+    return provider === "local" || provider === "bedrock";
   };
 
   /**

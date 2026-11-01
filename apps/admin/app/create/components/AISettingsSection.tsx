@@ -1,3 +1,4 @@
+import { AVAILABLE_PROVIDERS, PROVIDER_LABELS, usesServerEmbedding } from "@/app/utils/llmProviders";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button, Field, HStack, Input, NativeSelect, Textarea, VStack } from "@chakra-ui/react";
 import { type ModelOption, modelLabel } from "../hooks/useModelCatalog";
@@ -90,7 +91,8 @@ export function AISettingsSection({
   const embeddingModelOptions = showEmbeddingModelSelect ? (getCurrentEmbeddingModels?.() ?? []) : [];
   const embeddingDisabled = isEmbeddingModelDisabled?.() ?? false;
   const embeddingPlaceholder =
-    isEmbeddedAtLocal && provider !== "azure" ? "サーバ内埋め込みを使用" : "サーバー設定を使用";
+    isEmbeddedAtLocal && !usesServerEmbedding(provider) ? "サーバ内埋め込みを使用" : "サーバー設定を使用";
+  const isBedrock = provider === "bedrock";
 
   return (
     <VStack gap={10}>
@@ -132,11 +134,11 @@ export function AISettingsSection({
         <Field.Label>AIプロバイダー</Field.Label>
         <NativeSelect.Root w={"40%"}>
           <NativeSelect.Field value={provider} onChange={onProviderChange}>
-            <option value={"openai"}>OpenAI</option>
-            <option value={"azure"}>Azure</option>
-            <option value={"openrouter"}>OpenRouter</option>
-            <option value={"gemini"}>Gemini</option>
-            <option value={"local"}>LocalLLM</option>
+            {AVAILABLE_PROVIDERS.map((value) => (
+              <option key={value} value={value}>
+                {PROVIDER_LABELS[value]}
+              </option>
+            ))}
           </NativeSelect.Field>
           <NativeSelect.Indicator />
         </NativeSelect.Root>
@@ -144,7 +146,7 @@ export function AISettingsSection({
       </Field.Root>
 
       {/* TODO: azure の場合は別の方法が必要そうなので別途対応する */}
-      {provider !== "local" && provider !== "azure" && (
+      {provider !== "local" && provider !== "azure" && !isBedrock && (
         <Field.Root>
           <Field.Label>APIキー</Field.Label>
           <Input
@@ -220,28 +222,31 @@ export function AISettingsSection({
         <Field.HelperText>{getModelDescription()}</Field.HelperText>
       </Field.Root>
 
-      <Field.Root>
-        <Checkbox
-          checked={isEmbeddedAtLocal}
-          onCheckedChange={(details) => {
-            const { checked } = details;
-            if (checked === "indeterminate") return;
-            onEmbeddedAtLocalChange(checked);
-          }}
-          disabled={isEmbeddedAtLocalDisabled?.()}
-        >
-          埋め込み処理をサーバ内で行う
-        </Checkbox>
-        <Field.HelperText>
-          埋め込み処理をサーバ内で行うことで、APIの利用料金を削減します。
-          精度に関しては未検証であり、OpenAIを使った場合と大きく異なる結果になる可能性があります。
-          {isEmbeddedAtLocalDisabled?.() && (
-            <span style={{ color: "red" }}>
-              ※ LocalLLMプロバイダーを選択している場合、この設定は強制的にONになります
-            </span>
-          )}
-        </Field.HelperText>
-      </Field.Root>
+      {/* Bedrock は埋め込みもサーバーの Bedrock で行うので、サーバ内埋め込みの選択肢を出さない */}
+      {!isBedrock && (
+        <Field.Root>
+          <Checkbox
+            checked={isEmbeddedAtLocal}
+            onCheckedChange={(details) => {
+              const { checked } = details;
+              if (checked === "indeterminate") return;
+              onEmbeddedAtLocalChange(checked);
+            }}
+            disabled={isEmbeddedAtLocalDisabled?.()}
+          >
+            埋め込み処理をサーバ内で行う
+          </Checkbox>
+          <Field.HelperText>
+            埋め込み処理をサーバ内で行うことで、APIの利用料金を削減します。
+            精度に関しては未検証であり、OpenAIを使った場合と大きく異なる結果になる可能性があります。
+            {isEmbeddedAtLocalDisabled?.() && (
+              <span style={{ color: "red" }}>
+                ※ LocalLLMプロバイダーを選択している場合、この設定は強制的にONになります
+              </span>
+            )}
+          </Field.HelperText>
+        </Field.Root>
+      )}
 
       {showEmbeddingModelSelect && (
         <Field.Root disabled={embeddingDisabled}>

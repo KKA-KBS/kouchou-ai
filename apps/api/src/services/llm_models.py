@@ -124,6 +124,9 @@ async def _discover_models_by_provider(provider: str, address: str | None = None
         return await get_gemini_models()
     elif provider == "local":
         return await get_local_llm_models(address)
+    elif provider == "bedrock":
+        # LiteLLM に別名が残っていても一覧に出さないよう、カタログだけを返す
+        return []
     else:
         raise ValueError(f"Unknown provider: {provider}")
 

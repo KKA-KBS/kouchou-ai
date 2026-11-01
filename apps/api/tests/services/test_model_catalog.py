@@ -163,3 +163,18 @@ async def test_local_models_use_pipeline_address_resolution(monkeypatch, address
 
     assert models == [{"value": "llama3", "label": "llama3"}]
     openai_cls.assert_called_once_with(base_url=expected_base_url, api_key="gateway-token")
+
+
+def test_bedrock_lists_nova_lite_and_server_embedding():
+    rows = models_for_provider("bedrock")
+    chat = [row for row in rows if row["kind"] == "chat"]
+    embedding = [row for row in rows if row["kind"] == "embedding"]
+    assert [(row["value"], row["label"]) for row in chat] == [("amazon.nova-lite-v1:0", "Amazon Nova Lite")]
+    assert embedding[0]["selection_mode"] == "server"
+
+
+@pytest.mark.asyncio
+async def test_bedrock_catalog_does_not_list_gateway_aliases():
+    """LiteLLM に別名が残っていても、一覧はカタログの行だけ"""
+    models = await get_models_by_provider("bedrock", "http://elsewhere:4000")
+    assert {row["value"] for row in models} == {row["value"] for row in models_for_provider("bedrock")}

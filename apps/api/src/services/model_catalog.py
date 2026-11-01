@@ -78,6 +78,42 @@ def azure_embedding_model() -> dict:
     }
 
 
+BEDROCK_CHAT_MODEL = "amazon.nova-lite-v1:0"
+BEDROCK_EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0"
+
+
+def bedrock_models() -> list[dict]:
+    """Bedrock のモデル。LiteLLM の model_name と同じ名前を返す（infra/litellm/config.yaml）。
+
+    埋め込みはサーバー設定（EMBEDDING_MODEL）を使い、画面からは変えない。
+    """
+    return [
+        {
+            "provider": "bedrock",
+            "value": BEDROCK_CHAT_MODEL,
+            "label": "Amazon Nova Lite",
+            "description": "東京リージョンの Amazon Bedrock で動く Amazon Nova Lite。",
+            "kind": CHAT_KIND,
+            "verified": False,
+            "available": True,
+            "deprecated": False,
+            "price": None,
+        },
+        {
+            "provider": "bedrock",
+            "value": os.getenv("EMBEDDING_MODEL") or BEDROCK_EMBEDDING_MODEL,
+            "label": "Amazon Titan Text Embeddings V2",
+            "description": "東京リージョンの Amazon Bedrock で動く埋め込みモデル。サーバーに設定されたものを使います。",
+            "kind": EMBEDDING_KIND,
+            "verified": False,
+            "available": True,
+            "deprecated": False,
+            "price": None,
+            "selection_mode": "server",
+        },
+    ]
+
+
 def models_for_provider(provider: str, kind: str | None = None) -> list[dict]:
     """プロバイダーのモデル一覧を返す。
 
@@ -86,6 +122,8 @@ def models_for_provider(provider: str, kind: str | None = None) -> list[dict]:
     """
     if provider == "azure":
         rows = [azure_model(), azure_embedding_model()]
+    elif provider == "bedrock":
+        rows = bedrock_models()
     else:
         rows = deepcopy([row for row in CATALOG if row["provider"] == provider])
         for row in rows:
@@ -135,7 +173,7 @@ def price_for_model(provider: str, model: str) -> dict | None:
 
 
 def pricing_table() -> dict:
-    result = {provider: {} for provider in ("openai", "azure", "gemini", "openrouter", "local")}
+    result = {provider: {} for provider in ("openai", "azure", "gemini", "openrouter", "local", "bedrock")}
     result["azure"]["azure-server"] = azure_price()
     for row in CATALOG:
         result[row["provider"]][row["value"]] = price_for_model(row["provider"], row["value"])

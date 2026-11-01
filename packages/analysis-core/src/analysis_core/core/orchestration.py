@@ -241,7 +241,7 @@ def validate_api_keys(provider: str, user_api_key: str | None = None) -> None:
     before starting the pipeline, rather than failing after N API calls.
 
     Args:
-        provider: The LLM provider name (openai, azure, gemini, local, openrouter)
+        provider: The LLM provider name (openai, azure, gemini, local, openrouter, bedrock)
         user_api_key: Optional user-provided API key (overrides environment variable)
 
     Raises:
@@ -292,6 +292,10 @@ def validate_api_keys(provider: str, user_api_key: str | None = None) -> None:
             )
 
     elif provider == "local":
+        pass
+
+    elif provider == "bedrock":
+        # Bedrock はゲートウェイ（LiteLLM）が AWS の認証を持つ。ゲートウェイの鍵は LOCAL_LLM_API_KEY。
         pass
 
     else:
