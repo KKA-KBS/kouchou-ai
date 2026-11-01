@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 _tenant_id: ContextVar[str | None] = ContextVar("tenant_id", default=None)
 
 OPEN_PATHS = {"/", "/health", "/api/health"}
+# サイト共通のメタ情報。テナントのデータを含まない。
+OPEN_PREFIXES = ("/meta/",)
 
 
 def current_tenant() -> str | None:
@@ -50,12 +52,14 @@ def _memberships(sub: str) -> list[dict]:
 def resolve_tenant(request: Request) -> str | None:
     if not os.getenv("MEMBERSHIPS_TABLE"):
         return None
-    if request.url.path in OPEN_PATHS:
+    if request.url.path in OPEN_PATHS or request.url.path.startswith(OPEN_PREFIXES):
         return None
 
     sub = request.headers.get("x-amzn-oidc-identity", "").strip()
     if not sub:
-        return None
+        # テナントが空だと一覧の絞り込みが効かず、全テナントの記録が見える。
+        # 画面のサーバーがヘッダを渡し忘れても漏れないよう、通さない。
+        raise PermissionError("認証が必要です")
 
     rows = _memberships(sub)
     tenants = [row["tenantId"] for row in rows]

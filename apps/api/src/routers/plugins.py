@@ -10,11 +10,13 @@ These endpoints allow the admin UI to:
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from src.plugins.base import PluginConfigError
 from src.plugins.registry import PluginRegistry, load_builtin_plugins
 from src.routers.admin_report import verify_admin_api_key
+from src.services.tenant_guard import require_input_not_of_other_tenant
 from src.utils.slug_utils import validate_slug
 
 logger = logging.getLogger("uvicorn")
@@ -140,6 +142,8 @@ async def import_data(plugin_id: str, request: ImportRequest) -> ImportResponse:
     # fileName は INPUT_DIR 配下の CSV ファイル名に使われるため、パストラバーサルを防ぐ。
     # 下の try の広い except に握りつぶされないよう、try の外で検証する。
     validate_slug(request.fileName)
+    # 他テナントのレポートの入力を上書きしない。
+    await run_in_threadpool(require_input_not_of_other_tenant, request.fileName)
 
     try:
         # Fetch data from source

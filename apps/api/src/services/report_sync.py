@@ -1,12 +1,20 @@
 import json
 import os
+import shutil
+import tempfile
+import threading
 from pathlib import Path
 
 from src.config import settings
 from src.services.storage import get_storage_service
+from src.tenant import current_tenant
 from src.utils.logger import setup_logger
 
 logger = setup_logger()
+
+# このプロセスで S3 から復元済みの (テナント, slug)。タスクのディスクはプロセスと一緒に消えるので、メモリで持てば足りる。
+_restored_reports: set[tuple[str, str]] = set()
+_restore_lock = threading.Lock()
 
 
 class ReportSyncService:
@@ -35,14 +43,67 @@ class ReportSyncService:
     def __init__(self):
         self.storage_service = get_storage_service()
 
-    def sync_status_file_to_storage(self) -> None:
+    def sync_status_file_to_storage(self, local_path: Path | None = None) -> None:
         """ステータスファイルをストレージにアップロードする"""
-        if not self.LOCAL_STATUS_FILE_PATH.exists():
-            logger.warning(f"Status file does not exist: {self.LOCAL_STATUS_FILE_PATH}")
+        local_path = local_path or self.LOCAL_STATUS_FILE_PATH
+        if not local_path.exists():
+            logger.warning(f"Status file does not exist: {local_path}")
             return
 
         remote_status_file_path = f"{self.REMOTE_STATUS_FILE_PREFIX}/report_status.json"
-        self.storage_service.upload_file(str(self.LOCAL_STATUS_FILE_PATH), remote_status_file_path)
+        self.storage_service.upload_file(str(local_path), remote_status_file_path)
+
+    def sync_report_file_to_storage(self, slug: str, file_name: str) -> bool:
+        """レポートディレクトリの1ファイルだけをストレージにアップロードする
+
+        管理画面の編集は分析の完了を待たずにローカルを書き換えるため、編集の直後に呼ぶ。
+        """
+        local_path = settings.REPORT_DIR / slug / file_name
+        if not local_path.exists():
+            logger.warning(f"レポートファイルが存在しません: {local_path}")
+            return False
+        remote_path = f"{self.REMOTE_REPORT_DIR_PREFIX}/{slug}/{file_name}"
+        return bool(self.storage_service.upload_file(str(local_path), remote_path))
+
+    def ensure_local_report_files(self, slug: str) -> None:
+        """ストレージにある成果物・設定・入力のうち、手元に無いものだけを取ってくる
+
+        タスクを入れ替えるとローカルのディスクは空になる。起動時の復元はテナントが空のため
+        テナントのプレフィックスを読めないので、管理画面の操作の前にここで補う。
+        ローカルにあるファイルは、まだストレージに上がっていない編集を含みうるので上書きしない。
+        テナントが空のときは他テナントを探さない。
+        """
+        tenant = current_tenant()
+        if not tenant:
+            return
+        with _restore_lock:
+            if (tenant, slug) in _restored_reports:
+                return
+
+            report_dir = settings.REPORT_DIR / slug
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_dir = Path(tmp)
+                if self._download_directory_from_storage(
+                    f"{self.REMOTE_REPORT_DIR_PREFIX}/{slug}", tmp_dir, self.PRESERVED_REPORT_FILES, "レポートファイル"
+                ):
+                    for downloaded in tmp_dir.rglob("*"):
+                        if not downloaded.is_file():
+                            continue
+                        destination = report_dir / downloaded.relative_to(tmp_dir)
+                        if destination.exists():
+                            continue
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(downloaded), destination)
+
+            config_path = settings.CONFIG_DIR / f"{slug}.json"
+            if not config_path.exists():
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                self.storage_service.download_file(f"{self.REMOTE_CONFIG_DIR_PREFIX}/{slug}.json", str(config_path))
+
+            if not (settings.INPUT_DIR / f"{slug}.csv").exists():
+                self.download_input_file(slug)
+
+            _restored_reports.add((tenant, slug))
 
     def _cleanup_report_files(self, report_dir: Path) -> bool:
         """レポートディレクトリから保持すべきファイル以外を削除する

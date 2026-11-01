@@ -1,5 +1,6 @@
 "use server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
 import { getApiBaseUrl } from "@/app/utils/api";
 
 type DuplicateParams = {
@@ -44,10 +45,8 @@ export async function duplicateReport(sourceSlug: string, params: DuplicateParam
   try {
     const response = await fetch(`${getApiBaseUrl()}/admin/reports/${encodedSourceSlug}/duplicate`, {
       method: "POST",
-      headers: {
-        "x-api-key": adminApiKey,
-        "Content-Type": "application/json",
-      },
+      // 利用者とテナントを渡す。渡さないと API はテナントを決められず、複製元も複製先も正しく扱えない。
+      headers: await adminApiHeaders(),
       body: JSON.stringify(body),
     });
 

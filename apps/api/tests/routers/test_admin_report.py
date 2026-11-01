@@ -612,3 +612,31 @@ def test_azure_verification_guidance_without_exception_details(client, error_kin
     assert "モデルのバージョンではなくAPIバージョン" in data["message"]
     assert "secret detail" not in response.text
     assert "private-endpoint" not in response.text
+
+
+class TestPrepareReportFiles:
+    """成果物を触る前に、今のテナントのレポートか確かめてから手元に補う"""
+
+    def test_rejects_slug_of_another_tenant(self):
+        from fastapi import HTTPException
+
+        with (
+            patch("src.services.tenant_guard.current_tenant", return_value="ashisuto"),
+            patch("src.services.tenant_guard.slug_exists", return_value=False),
+            patch.object(admin_report, "ReportSyncService") as sync,
+        ):
+            with pytest.raises(HTTPException) as error:
+                admin_report._prepare_report_files("demo1-report")
+
+        assert error.value.status_code == 404
+        sync.assert_not_called()
+
+    def test_restores_files_of_own_report(self):
+        with (
+            patch("src.services.tenant_guard.current_tenant", return_value="ashisuto"),
+            patch("src.services.tenant_guard.slug_exists", return_value=True),
+            patch.object(admin_report, "ReportSyncService") as sync,
+        ):
+            admin_report._prepare_report_files("own-report")
+
+        sync.return_value.ensure_local_report_files.assert_called_once_with("own-report")

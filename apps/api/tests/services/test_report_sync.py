@@ -341,3 +341,88 @@ class TestReportSyncService:
         # 検証
         assert result is True
         assert not mock_input_file.exists()  # ファイルが削除されている
+
+
+class TestEnsureLocalReportFiles:
+    """タスクを入れ替えたあと、手元に無いファイルだけをストレージから補う"""
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, tmp_path: Path):
+        from src.services import report_sync
+        from src.tenant import reset_tenant, set_tenant
+
+        report_sync._restored_reports.clear()
+        token = set_tenant("ashisuto")
+        with (
+            patch.object(settings, "REPORT_DIR", tmp_path / "outputs"),
+            patch.object(settings, "CONFIG_DIR", tmp_path / "configs"),
+            patch.object(settings, "INPUT_DIR", tmp_path / "inputs"),
+        ):
+            yield
+        reset_tenant(token)
+        report_sync._restored_reports.clear()
+
+    @pytest.fixture
+    def storage(self):
+        storage = MagicMock()
+
+        def download_directory(remote_prefix, local_dir, target_suffixes=()):
+            assert remote_prefix == "outputs/slug-a"
+            for name, body in {"hierarchical_result.json": "remote", "hierarchical_merge_labels.csv": "remote"}.items():
+                (Path(local_dir) / name).write_text(body, encoding="utf-8")
+            return True
+
+        def download_file(remote_path, local_path):
+            Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(local_path).write_text(f"remote:{remote_path}", encoding="utf-8")
+            return True
+
+        storage.download_directory.side_effect = download_directory
+        storage.download_file.side_effect = download_file
+        return storage
+
+    def test_downloads_missing_files_and_keeps_local_edits(self, storage: MagicMock):
+        """手元のファイルはストレージに未反映の編集を含みうるので、上書きしない"""
+        local_labels = settings.REPORT_DIR / "slug-a" / "hierarchical_merge_labels.csv"
+        local_labels.parent.mkdir(parents=True)
+        local_labels.write_text("local", encoding="utf-8")
+
+        with patch("src.services.report_sync.get_storage_service", return_value=storage):
+            ReportSyncService().ensure_local_report_files("slug-a")
+
+        assert local_labels.read_text(encoding="utf-8") == "local"
+        assert (settings.REPORT_DIR / "slug-a" / "hierarchical_result.json").read_text(encoding="utf-8") == "remote"
+        assert (settings.CONFIG_DIR / "slug-a.json").read_text(encoding="utf-8") == "remote:configs/slug-a.json"
+        assert (settings.INPUT_DIR / "slug-a.csv").read_text(encoding="utf-8") == "remote:inputs/slug-a.csv"
+
+    def test_restores_once_per_process(self, storage: MagicMock):
+        with patch("src.services.report_sync.get_storage_service", return_value=storage):
+            ReportSyncService().ensure_local_report_files("slug-a")
+            ReportSyncService().ensure_local_report_files("slug-a")
+
+        storage.download_directory.assert_called_once()
+
+    def test_does_nothing_without_tenant(self, storage: MagicMock):
+        """テナントが空のときは、他テナントのプレフィックスを探さない"""
+        from src.tenant import reset_tenant, set_tenant
+
+        token = set_tenant(None)
+        try:
+            with patch("src.services.report_sync.get_storage_service", return_value=storage):
+                ReportSyncService().ensure_local_report_files("slug-a")
+        finally:
+            reset_tenant(token)
+
+        storage.download_directory.assert_not_called()
+        storage.download_file.assert_not_called()
+
+    def test_sync_report_file_to_storage(self, storage: MagicMock):
+        path = settings.REPORT_DIR / "slug-a" / "visualization_config.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("{}", encoding="utf-8")
+        storage.upload_file.return_value = True
+
+        with patch("src.services.report_sync.get_storage_service", return_value=storage):
+            assert ReportSyncService().sync_report_file_to_storage("slug-a", "visualization_config.json") is True
+
+        storage.upload_file.assert_called_once_with(str(path), "outputs/slug-a/visualization_config.json")

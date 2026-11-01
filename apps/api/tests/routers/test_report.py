@@ -176,7 +176,7 @@ class TestReportEndpoint:
 
         assert response.status_code == 200
         assert response.json()["config"]["question"] == "遠隔"
-        assert calls == [(slug, ("hierarchical_result.json",))]
+        assert calls == [(slug, ("hierarchical_result.json", "visualization_config.json"))]
 
     def test_missing_result_without_tenant_does_not_search_other_tenants(
         self, client: TestClient, temp_report_dir, test_settings

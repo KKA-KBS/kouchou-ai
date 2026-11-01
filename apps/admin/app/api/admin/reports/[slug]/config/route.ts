@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { adminApiHeaders } from "@/app/utils/adminHeaders";
+
 const getAdminBaseUrl = () => {
   return process.env.API_BASEPATH || process.env.NEXT_PUBLIC_API_BASEPATH || "";
 };
@@ -18,10 +20,9 @@ export async function GET(_: Request, context: { params: Promise<{ slug: string 
   const { slug } = await context.params;
   const encodedSlug = encodeURIComponent(slug);
   try {
+    // 利用者とテナントを渡す。渡さないと API はこのレポートが今のテナントのものか確かめられない。
     const response = await fetch(`${baseUrl}/admin/reports/${encodedSlug}/config`, {
-      headers: {
-        "x-api-key": adminApiKey,
-      },
+      headers: await adminApiHeaders(),
     });
 
     const data = await response.json().catch(() => ({}));

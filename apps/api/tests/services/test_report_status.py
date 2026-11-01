@@ -467,3 +467,43 @@ class TestTenantScopedStatus:
         assert ("bare", None) in scopes
         assert all(item[0] != "mismatch" for item in scopes)
         assert all(item[0] != "ready-one" for item in scopes)
+
+
+class TestStatusPersistence:
+    """状態の変更は、タスクの入れ替えで消えないよう毎回ストレージに上げる"""
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, tmp_path):
+        original = deepcopy(report_status._report_status)
+        report_status._report_status.clear()
+        self._state_file = tmp_path / "report_status.json"
+        with patch("src.services.report_status.STATE_FILE", self._state_file):
+            yield
+        report_status._report_status.clear()
+        report_status._report_status.update(original)
+
+    def test_save_status_uploads_the_status_file(self):
+        report_status._report_status.update({"slug-a": _status_record("slug-a", status="ready")})
+
+        with patch("src.services.report_sync.ReportSyncService") as sync:
+            report_status.set_status("slug-a", ReportStatus.DELETED.value)
+
+        sync.return_value.sync_status_file_to_storage.assert_called_once_with(self._state_file)
+        assert json.loads(self._state_file.read_text(encoding="utf-8"))["slug-a"]["status"] == "deleted"
+
+    def test_save_status_keeps_local_file_when_upload_fails(self):
+        report_status._report_status.update({"slug-a": _status_record("slug-a", status="ready")})
+
+        with patch("src.services.report_sync.ReportSyncService", side_effect=RuntimeError("s3 down")):
+            report_status.set_status("slug-a", ReportStatus.DELETED.value)
+
+        assert json.loads(self._state_file.read_text(encoding="utf-8"))["slug-a"]["status"] == "deleted"
+
+    def test_slug_exists_in_any_tenant(self):
+        self._state_file.write_text(
+            json.dumps({"demo1:shared": _status_record("shared", status="ready", tenant="demo1")}),
+            encoding="utf-8",
+        )
+
+        assert report_status.slug_exists_in_any_tenant("shared") is True
+        assert report_status.slug_exists_in_any_tenant("other") is False

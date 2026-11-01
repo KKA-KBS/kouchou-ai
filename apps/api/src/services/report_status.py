@@ -154,6 +154,15 @@ def save_status() -> None:
                 tmp_path.unlink()
             raise
 
+        # 削除・公開範囲・タイトルの変更も、タスクの入れ替えで消えないよう毎回ストレージに上げる。
+        # 古い内容で新しい内容を上書きしないよう、ロックの中で上げる。
+        try:
+            from src.services.report_sync import ReportSyncService
+
+            ReportSyncService().sync_status_file_to_storage(STATE_FILE)
+        except Exception as e:
+            logger.error(f"Failed to sync report status to storage: {e}")
+
 
 def add_new_report_to_status(report_input: ReportInput) -> None:
     with _lock:
@@ -200,6 +209,17 @@ def add_new_report_to_status_from_config(slug: str, config: dict, source_slug: s
 def slug_exists(slug: str) -> bool:
     load_status()
     return _status_key(slug) in _report_status
+
+
+def slug_exists_in_any_tenant(slug: str) -> bool:
+    """どのテナントかを問わず、この slug の記録があるか
+
+    ローカルのレポートディレクトリはテナントで分かれていない。slug をテナントをまたいで
+    一意にしておかないと、再起動後に別テナントの成果物を手元のファイルとして読んでしまう。
+    """
+    load_status()
+    with _lock:
+        return any(report.get("slug") == slug for report in _report_status.values())
 
 
 def delete_report_from_status(slug: str) -> None:

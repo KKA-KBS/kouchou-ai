@@ -41,12 +41,24 @@ from src.services.report_status import (
     update_report_config,
     update_report_visibility_state,
 )
+from src.services.report_sync import ReportSyncService
+from src.services.tenant_guard import require_own_report
 from src.utils.logger import setup_logger
 from src.utils.slug_utils import validate_slug
 
 slogger = setup_logger()
 router = APIRouter()
 MAX_ERROR_LOG_CHARS = 4000
+
+
+def _prepare_report_files(slug: str) -> None:
+    """レポートの成果物を読む・書く前に、今のテナントのレポートであることを確かめ、手元に無いファイルを取ってくる
+
+    タスクを入れ替えた直後はローカルのディスクが空なので、ストレージから補う。
+    """
+    require_own_report(slug)
+    ReportSyncService().ensure_local_report_files(slug)
+
 
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
@@ -164,6 +176,7 @@ async def duplicate_report_endpoint(
 @router.get("/admin/comments/{slug}/csv")
 async def download_comments_csv(slug: str, api_key: str = Depends(verify_admin_api_key)) -> FileResponse:
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     csv_path = settings.REPORT_DIR / slug / "final_result_with_comments.csv"
     validate_path_within_report_dir(csv_path)
     if not csv_path.exists():
@@ -174,6 +187,7 @@ async def download_comments_csv(slug: str, api_key: str = Depends(verify_admin_a
 @router.get("/admin/reports/{slug}/json")
 async def download_report_json(slug: str, api_key: str = Depends(verify_admin_api_key)) -> FileResponse:
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     json_path = settings.REPORT_DIR / slug / "hierarchical_result.json"
     validate_path_within_report_dir(json_path)
     if not json_path.exists():
@@ -207,6 +221,8 @@ def _api_key_verification_error_response(message: str, error_type: str) -> dict:
 @router.get("/admin/reports/{slug}/status/step-json", dependencies=[Depends(verify_admin_api_key)])
 async def get_current_step(slug: str) -> dict:
     validate_slug(slug)
+    # 進捗のファイルには、失敗時のログの抜粋（意見の本文を含みうる）も入る。
+    await run_in_threadpool(require_own_report, slug)
     status_file = settings.REPORT_DIR / slug / "hierarchical_status.json"
     try:
         # ステータスファイルが存在しない場合は "loading" を返す
@@ -332,12 +348,15 @@ async def update_report_config_endpoint(
         更新後のレポート情報
     """
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     try:
         # 中間ファイル（config.json）を更新
         config_repo = ConfigRepository(slug)
         is_updated = config_repo.update_json(config)
         if not is_updated:
             raise Exception(f"Failed to update config json for {slug}")
+        # 集約の完了を待たずに保存する。集約が失敗しても編集は残す。
+        await run_in_threadpool(ReportSyncService().sync_config_file_to_storage, slug)
 
         is_aggregation_executed = execute_aggregation(slug)
         if not is_aggregation_executed:
@@ -366,6 +385,7 @@ async def update_report_config_endpoint(
 async def get_report_config_endpoint(slug: str, api_key: str = Depends(verify_admin_api_key)) -> dict:
     """レポートの設定(config.json)を取得するエンドポイント"""
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     try:
         config_repo = ConfigRepository(slug)
         config = config_repo.read_from_json()
@@ -385,6 +405,7 @@ async def get_report_config_endpoint(slug: str, api_key: str = Depends(verify_ad
 @router.get("/admin/reports/{slug}/cluster-labels")
 async def get_clusters(slug: str, api_key: str = Depends(verify_admin_api_key)) -> dict[str, list[ClusterResponse]]:
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     try:
         repo = ClusterRepository(slug)
         return {
@@ -404,6 +425,7 @@ async def update_cluster_label(
     slug: str, updated_cluster: ClusterUpdate, api_key: str = Depends(verify_admin_api_key)
 ) -> dict[str, bool]:
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     # FIXME: error handlingを共通化するタイミングで、error handlingを切り出す
     # issue: https://github.com/digitaldemocracy2030/kouchou-ai/issues/546
     repo = ClusterRepository(slug)
@@ -413,6 +435,8 @@ async def update_cluster_label(
         raise HTTPException(status_code=404, detail=str(e)) from e
     if not is_csv_updated:
         raise HTTPException(status_code=500, detail="意見グループの更新に失敗しました")
+    # 集約の完了を待たずに保存する。集約が失敗しても編集は残す。
+    await run_in_threadpool(ReportSyncService().sync_report_file_to_storage, slug, repo.labels_path.name)
 
     # aggregation を実行
     is_aggregation_executed = execute_aggregation(slug)
@@ -436,6 +460,7 @@ async def get_visualization_config(slug: str, api_key: str = Depends(verify_admi
         可視化設定
     """
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     visualization_config_path = settings.REPORT_DIR / slug / "visualization_config.json"
     if not visualization_config_path.exists():
         return {"visualizationConfig": None}
@@ -465,6 +490,7 @@ async def update_visualization_config(
         更新後の可視化設定
     """
     validate_slug(slug)
+    await run_in_threadpool(_prepare_report_files, slug)
     try:
         report_dir = settings.REPORT_DIR / slug
         if not report_dir.exists():
@@ -475,6 +501,11 @@ async def update_visualization_config(
         # snake_caseで保存（Pydanticのデフォルト）
         with open(visualization_config_path, mode="w", encoding="utf-8") as f:
             json.dump(config.model_dump(), f, ensure_ascii=False, indent=2)
+        # この設定は分析の成果物と一緒に上がらないので、保存のたびにストレージへ上げる。
+        if not await run_in_threadpool(
+            ReportSyncService().sync_report_file_to_storage, slug, visualization_config_path.name
+        ):
+            raise Exception(f"Failed to upload visualization config for {slug}")
 
         await run_in_threadpool(invalidate_report_cache, slug)
 

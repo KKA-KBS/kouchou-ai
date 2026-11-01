@@ -13,7 +13,12 @@ from src.schemas.admin_report import ReportDuplicateOverrides, ReportDuplicateRe
 from src.schemas.report_config import ReportConfig
 from src.services.analysis_config import prune_config_for_mode
 from src.services.report_launcher import launch_report_generation_from_config
-from src.services.report_status import add_new_report_to_status_from_config, delete_report_from_status, slug_exists
+from src.services.report_status import (
+    add_new_report_to_status_from_config,
+    delete_report_from_status,
+    slug_exists,
+    slug_exists_in_any_tenant,
+)
 from src.services.report_sync import ReportSyncService
 from src.utils.logger import setup_logger
 from src.utils.slug_utils import validate_slug
@@ -154,7 +159,7 @@ def release_duplicate_lock(lock_path: Path) -> None:
 
 
 def slug_exists_anywhere(slug: str, include_input: bool = True) -> bool:
-    if slug_exists(slug):
+    if slug_exists(slug) or slug_exists_in_any_tenant(slug):
         return True
     if (settings.CONFIG_DIR / f"{slug}.json").exists():
         return True

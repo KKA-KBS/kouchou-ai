@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from src.config import settings
 from src.services.spreadsheet_service import delete_input_file, process_spreadsheet_url
+from src.services.tenant_guard import require_input_not_of_other_tenant
 from src.utils.logger import setup_logger
 from src.utils.slug_utils import validate_slug
 from src.utils.validation import validate_filename
@@ -59,6 +60,8 @@ async def import_spreadsheet(
     Raises:
         HTTPException: インポート処理中にエラーが発生した場合
     """
+    # 他テナントのレポートの入力を上書きしない。
+    await run_in_threadpool(require_input_not_of_other_tenant, input_data.file_name)
     try:
         # 外部 HTTP 取得を含む同期処理なので、イベントループを塞がないよう threadpool で実行する
         file_path = await run_in_threadpool(process_spreadsheet_url, input_data.url, input_data.file_name)
@@ -93,6 +96,7 @@ async def get_spreadsheet_data(file_name: str, api_key: str = Depends(verify_adm
     """
     # file_name はパス構成要素に使われるため、パストラバーサルを防ぐ
     validate_slug(file_name)
+    await run_in_threadpool(require_input_not_of_other_tenant, file_name)
     input_path = settings.INPUT_DIR / f"{file_name}.csv"
     try:
         if not os.path.exists(input_path):
@@ -139,6 +143,7 @@ async def delete_input(file_name: str, api_key: str = Depends(verify_admin_api_k
     valid, message = validate_filename(file_name)
     if not valid:
         raise HTTPException(status_code=400, detail=message)
+    await run_in_threadpool(require_input_not_of_other_tenant, file_name)
 
     try:
         delete_input_file(file_name)

@@ -36,7 +36,8 @@ def _ensure_report_result(slug: str) -> bool:
         return True
     if not current_tenant():
         return False
-    ReportSyncService().download_report_artifacts(slug, ("hierarchical_result.json",))
+    # 可視化設定も同じ場所に置く。結果だけ取ると、再起動後に表示設定が既定に戻る。
+    ReportSyncService().download_report_artifacts(slug, ("hierarchical_result.json", "visualization_config.json"))
     return report_path.exists()
 
 
