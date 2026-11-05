@@ -73,6 +73,10 @@ export default async function Page() {
         "Content-Type": "application/json",
       },
     });
+    // ログインしていないリクエストなどで API が拒否したときは、一覧の代わりにエラーを出す
+    if (!reportsResponse.ok) {
+      throw new Error(`レポート一覧の取得に失敗しました (HTTP ${reportsResponse.status})`);
+    }
     const meta: Meta = await metaResponse.json();
     let reports: Report[] = await reportsResponse.json();
 
