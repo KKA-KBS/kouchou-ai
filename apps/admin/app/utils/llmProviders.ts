@@ -6,7 +6,7 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   openrouter: "OpenRouter",
   gemini: "Gemini",
   local: "LocalLLM",
-  bedrock: "Amazon Bedrock（東京リージョン）",
+  bedrock: "Amazon Bedrock（国内）",
 };
 
 const SELECTABLE_PROVIDERS: Provider[] = ["openai", "azure", "openrouter", "gemini", "local"];

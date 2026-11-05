@@ -165,11 +165,15 @@ async def test_local_models_use_pipeline_address_resolution(monkeypatch, address
     openai_cls.assert_called_once_with(base_url=expected_base_url, api_key="gateway-token")
 
 
-def test_bedrock_lists_nova_lite_and_server_embedding():
+def test_bedrock_lists_haiku_first_and_server_embedding():
     rows = models_for_provider("bedrock")
     chat = [row for row in rows if row["kind"] == "chat"]
     embedding = [row for row in rows if row["kind"] == "embedding"]
-    assert [(row["value"], row["label"]) for row in chat] == [("amazon.nova-lite-v1:0", "Amazon Nova Lite")]
+    # 先頭が画面の既定になる
+    assert [(row["value"], row["label"]) for row in chat] == [
+        ("jp.anthropic.claude-haiku-5-5", "Claude Haiku 5.5"),
+        ("amazon.nova-lite-v1:0", "Amazon Nova Lite"),
+    ]
     assert embedding[0]["selection_mode"] == "server"
 
 

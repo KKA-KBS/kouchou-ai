@@ -78,21 +78,33 @@ def azure_embedding_model() -> dict:
     }
 
 
-BEDROCK_CHAT_MODEL = "amazon.nova-lite-v1:0"
+BEDROCK_CHAT_MODEL = "jp.anthropic.claude-haiku-5-5"
+BEDROCK_TOKYO_ONLY_CHAT_MODEL = "amazon.nova-lite-v1:0"
 BEDROCK_EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0"
 
 
 def bedrock_models() -> list[dict]:
     """Bedrock のモデル。LiteLLM の model_name と同じ名前を返す（infra/litellm/config.yaml）。
 
-    埋め込みはサーバー設定（EMBEDDING_MODEL）を使い、画面からは変えない。
+    先頭のチャットモデルが画面の既定になる。埋め込みはサーバー設定（EMBEDDING_MODEL）を使い、画面からは変えない。
     """
     return [
         {
             "provider": "bedrock",
             "value": BEDROCK_CHAT_MODEL,
+            "label": "Claude Haiku 5.5",
+            "description": "Amazon Bedrock の Claude Haiku 5.5。国内（東京か大阪）で処理します。",
+            "kind": CHAT_KIND,
+            "verified": False,
+            "available": True,
+            "deprecated": False,
+            "price": None,
+        },
+        {
+            "provider": "bedrock",
+            "value": BEDROCK_TOKYO_ONLY_CHAT_MODEL,
             "label": "Amazon Nova Lite",
-            "description": "東京リージョンの Amazon Bedrock で動く Amazon Nova Lite。",
+            "description": "東京リージョンだけで処理する Amazon Nova Lite。安価ですが、要約やラベルの質は Claude Haiku 5.5 より劣ります。",
             "kind": CHAT_KIND,
             "verified": False,
             "available": True,

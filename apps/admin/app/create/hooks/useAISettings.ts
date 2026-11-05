@@ -248,7 +248,7 @@ export function useAISettings() {
     openrouter: "OpenRouterを使用して複数のモデルにアクセスします。",
     gemini: "Google Gemini APIを使用します。GoogleのAPIキーが必要です。",
     local: "ローカルで実行されているLLMサーバーに接続します。",
-    bedrock: "東京リージョンのAmazon Bedrockを使用します。接続先と認証はサーバーに設定済みです。",
+    bedrock: "国内（東京・大阪）のAmazon Bedrockを使用します。接続先と認証はサーバーに設定済みです。",
   };
   const getProviderDescription = () => descriptions[provider];
   const getCurrentModels = (): ModelOption[] => {
