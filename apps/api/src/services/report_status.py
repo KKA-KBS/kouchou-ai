@@ -206,6 +206,51 @@ def add_new_report_to_status_from_config(slug: str, config: dict, source_slug: s
         save_status()
 
 
+def rebuild_status_from_storage_if_empty() -> int:
+    """ステータスファイルが無いとき、ストレージのレポートから記録を作り直す。
+
+    設定と結果がそろっているレポートを完了として戻す。公開範囲、タイトルの編集、
+    トークン使用量は残っていないので、限定公開・設定の質問文・0 で戻す。
+    戻した件数を返す。記録が1件でもあれば何もしない。
+    """
+    from src.services.storage import S3StorageService, get_storage_service
+
+    load_status()
+    with _lock:
+        if _report_status:
+            return 0
+    storage_service = get_storage_service()
+    if not isinstance(storage_service, S3StorageService):
+        return 0
+
+    reports = storage_service.list_reports_of_all_tenants()
+    if not reports:
+        return 0
+    with _lock:
+        for report in reports:
+            config = report["config"]
+            _report_status[f"{report['tenant_id']}:{report['slug']}"] = {
+                "slug": report["slug"],
+                "source_slug": None,
+                "status": ReportStatus.READY.value,
+                "title": config.get("question", ""),
+                "description": config.get("intro", ""),
+                "is_pubcom": config.get("is_pubcom", False),
+                "visibility": ReportVisibility.UNLISTED.value,
+                "created_at": report["created_at"],
+                "token_usage": 0,
+                "token_usage_input": 0,
+                "token_usage_output": 0,
+                "estimated_cost": None,
+                "provider": config.get("provider"),
+                "model": config.get("model"),
+                "tenant_id": report["tenant_id"],
+            }
+        save_status()
+    logger.warning(f"ステータスファイルが無かったため、ストレージから {len(reports)} 件のレポートを戻しました")
+    return len(reports)
+
+
 def slug_exists(slug: str) -> bool:
     load_status()
     return _status_key(slug) in _report_status

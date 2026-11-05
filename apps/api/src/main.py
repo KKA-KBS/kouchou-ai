@@ -8,7 +8,7 @@ from src.config import settings
 from src.middleware.security_middleware import register_security_middleware
 from src.routers import router
 from src.services.report_launcher import recover_interrupted_reports
-from src.services.report_status import load_status
+from src.services.report_status import load_status, rebuild_status_from_storage_if_empty
 from src.services.report_sync import initialize_from_storage
 from src.tenant import tenant_middleware
 from src.utils.logger import setup_logger
@@ -47,6 +47,11 @@ async def lifespan(app: FastAPI):
 
     # ステータスファイルをロード
     load_status()
+    # ステータスファイルを失っていたら、ストレージにあるレポートから記録を作り直す
+    try:
+        rebuild_status_from_storage_if_empty()
+    except Exception as e:
+        slogger.error(f"Failed to rebuild report status from storage: {e}")
     # 再起動前に処理中だったレポートが processing のまま固着しないよう status を確定する
     recover_interrupted_reports()
     yield

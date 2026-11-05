@@ -1,5 +1,7 @@
+import json
 import os
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
 
 from azure.core.exceptions import ResourceNotFoundError
@@ -364,7 +366,15 @@ class AzureBlobStorageService(StorageService):
 
 
 class S3StorageService(StorageService):
-    """S3 を Azure Blob と同じ4操作で扱う。キーは kouchou/{tenantId}/ 配下。"""
+    """S3 を Azure Blob と同じ4操作で扱う。キーは kouchou/{tenantId}/ 配下。
+
+    全テナントで1つのステータスファイルは kouchou/_shared/ 配下に置く。タスクのロールは
+    kouchou/* だけを読み書きできるので、この外に置くと保存に失敗する。
+    テナント ID は先頭に _ を使わないので、テナントのプレフィックスとは重ならない。
+    """
+
+    ROOT_PREFIX = "kouchou/"
+    SHARED_PREFIX = "kouchou/_shared/"
 
     def __init__(self):
         import boto3
@@ -378,7 +388,7 @@ class S3StorageService(StorageService):
     def _key(self, remote_path: str) -> str:
         normalized = remote_path.lstrip("/")
         if normalized.startswith("status"):
-            return normalized
+            return f"{self.SHARED_PREFIX}{normalized}"
         # テナントが空のときは記録を探して他テナントのプレフィックスを付けない。
         tenant = current_tenant()
         if not tenant:
@@ -469,6 +479,46 @@ class S3StorageService(StorageService):
         except Exception as e:
             logger.error(f"ディレクトリのダウンロードに失敗しました。プレフィックス: '{prefix}' エラー: {e}")
             return False
+
+
+    def list_reports_of_all_tenants(self) -> list[dict]:
+        """設定と結果がそろっているレポートを、全テナント分返す。
+
+        ステータスファイルを失ったときに記録を作り直すためだけに使う。
+        各要素は tenant_id、slug、config（設定の中身）、created_at（設定を保存した日時）。
+        """
+        configs: dict[tuple[str, str], datetime] = {}
+        results: set[tuple[str, str]] = set()
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=self.ROOT_PREFIX):
+            for item in page.get("Contents", []):
+                parts = item["Key"][len(self.ROOT_PREFIX) :].split("/")
+                if len(parts) < 3 or parts[0].startswith("_"):
+                    continue
+                tenant_id = parts[0]
+                if len(parts) == 3 and parts[1] == "configs" and parts[2].endswith(".json"):
+                    configs[(tenant_id, parts[2][: -len(".json")])] = item["LastModified"]
+                elif len(parts) == 4 and parts[1] == "outputs" and parts[3] == "hierarchical_result.json":
+                    results.add((tenant_id, parts[2]))
+
+        reports = []
+        for (tenant_id, slug), last_modified in sorted(configs.items()):
+            if (tenant_id, slug) not in results:
+                continue
+            key = f"{self.ROOT_PREFIX}{tenant_id}/configs/{slug}.json"
+            try:
+                body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+                config = json.loads(body)
+            except Exception as e:
+                logger.error(f"設定ファイルを読めませんでした。キー: '{key}' エラー: {e}")
+                continue
+            reports.append({
+                "tenant_id": tenant_id,
+                "slug": slug,
+                "config": config,
+                "created_at": last_modified.isoformat(),
+            })
+        return reports
 
 
 def get_storage_service() -> StorageService:
