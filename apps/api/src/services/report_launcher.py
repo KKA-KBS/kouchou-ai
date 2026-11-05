@@ -375,6 +375,15 @@ def _monitor_process(process: subprocess.Popen, slug: str, log_file: Any | None 
         else:
             _ensure_error_status_payload(slug)
             set_status(slug, "error")
+            # 失敗の原因はタスクの中のログにしか無く、タスクを入れ替えると消える。
+            # 意見の本文を含みうるので CloudWatch には出さず、テナントのプレフィックスに上げる。
+            report_sync_service = ReportSyncService()
+            for file_name in (ANALYSIS_LOG_FILENAME, "hierarchical_status.json"):
+                try:
+                    report_sync_service.sync_report_file_to_storage(slug, file_name)
+                except Exception as e:
+                    logger.error(f"Failed to upload {file_name} of failed report {slug}: {e}")
+            logger.error(f"Analysis failed for {slug}; see outputs/{slug}/{ANALYSIS_LOG_FILENAME} in storage")
     finally:
         if log_file is not None:
             log_file.close()
